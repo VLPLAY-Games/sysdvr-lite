@@ -188,20 +188,21 @@ static void usage(const char *a)
         "  --audio-device NAME          ALSA device\n"
         "  --audio-batching 0..3        audio packets the console sends at once (default 1, measured best A/V skew)\n"
         "  --av-offset MS               shift audio relative to video (positive = audio later)\n"
-        "  --screen-off                 turn the console screen off while streaming\n"
+        "  --keep-screen                do not turn the console screen off while streaming\n"
         "  --test-file FILE.h264        replay an Annex-B file instead of using USB (decoder testing)\n", a);
 }
 
 int main(int argc, char **argv)
 {
     const char *outfile = NULL, *adev = NULL, *drmdev = NULL, *testfile = NULL;
-    int use_drm = 0, no_audio = 0, no_video = 0, screen_off = 0;
+    int use_drm = 0, no_audio = 0, no_video = 0;
+    int screen_off = 1;       /* turn the console screen off while streaming, the sysmodule restores it on disconnect */
     decoder_opts dopt = { .name = "ffmpeg", .threads = 2 };
 
     static const struct option opts[] = {
         {"usb", 0, 0, 'u'}, {"decoder", 1, 0, 'd'}, {"ffmpeg-name", 1, 0, 'f'},
         {"threads", 1, 0, 'T'}, {"video-device", 1, 0, 'V'}, {"out", 1, 0, 'o'}, {"no-audio", 0, 0, 'A'},
-        {"no-video", 0, 0, 'N'}, {"drm", 2, 0, 'D'}, {"audio-device", 1, 0, 'a'}, {"screen-off", 0, 0, 's'},
+        {"no-video", 0, 0, 'N'}, {"drm", 2, 0, 'D'}, {"audio-device", 1, 0, 'a'}, {"screen-off", 0, 0, 's'}, {"keep-screen", 0, 0, 'K'},
         {"av-offset", 1, 0, 'O'}, {"audio-batching", 1, 0, 'B'}, {"test-file", 1, 0, 'F'}, {0}
     };
     int c;
@@ -217,7 +218,8 @@ int main(int argc, char **argv)
         case 'A': no_audio = 1; break;
         case 'N': no_video = 1; break;
         case 'a': adev = optarg; break;
-        case 's': screen_off = 1; break;
+        case 's': screen_off = 1; break;           /* default since the flag became opt-out */
+        case 'K': screen_off = 0; break;
         case 'O': g_av_offset_us = atoi(optarg) * 1000; break;
         case 'B': g_audio_batching = atoi(optarg); if (g_audio_batching < 0 || g_audio_batching > 3) g_audio_batching = 1; break;
         case 'F': testfile = optarg; no_audio = 1; break;

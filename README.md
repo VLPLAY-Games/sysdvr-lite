@@ -19,6 +19,7 @@ The official client is a .NET application with an ImGui/SDL front end. On an Ora
   - `null`: discards data, for network and protocol testing.
 - Output without a window system: KMS/DRM with the display mode matched to the video, never scaled. Frames are imported as dmabuf into EGL/GLES and converted to RGB on the GPU straight into the scanout buffer. Falls back to a CPU conversion when no GPU stack is available.
 - Audio over ALSA (48 kHz stereo S16) with A/V synchronization: both streams carry console timestamps, the audio follows the picture. Video is never delayed.
+- The console screen is turned off while the client is connected and turned back on when it disconnects (the SysDVR sysmodule does this on request of the client, protocol 03). Disable with `--keep-screen`.
 - When the console is unplugged, the display goes back to the terminal (no frozen last frame) and the picture returns when it is plugged in again.
 - Low-latency queues: when the decoder falls behind, old packets are dropped and decoding resumes at the next keyframe.
 - arm64 Linux only (the build refuses to configure on anything else).
@@ -116,6 +117,7 @@ To undo the CMA change, restore the backup that the installer made: `sudo cp /bo
 | No picture, `journalctl -u sysdvr-lite` shows errors | Missing `/dev/video0` means the Cedrus driver is not loaded (try `--decoder ffmpeg`). "decoder keeps failing" makes the service restart itself, send the log lines before it. |
 | Picture works but no sound | Pick the ALSA device with `aplay -L` and set it as shown in [Changing settings](#changing-settings). HDMI is `plughw:CARD=HDMI,DEV=0`. |
 | Audio and picture out of sync | Try `--av-offset` (milliseconds, positive = audio later) and `SYSDVR_SYNC=1` to see the measured skew. |
+| The console screen stays off after disconnecting | The sysmodule restores it itself a moment after the connection ends. If it does not, lock and unlock the console (power button), or start the client with `--keep-screen` to never turn it off. SysDVR itself marks this feature as experimental. |
 | Black screen with the console unplugged | That is the terminal; log in on the display or over SSH. The picture returns on its own when the console is plugged in. |
 | High CPU | The log should say `GPU conversion enabled`. If it falls back to CPU conversion, install the GPU packages (see Manual build). |
 
@@ -163,7 +165,7 @@ The client waits until a console running SysDVR in **USB mode** shows up, and re
 | `--audio-device NAME` | ALSA device, e.g. `plughw:CARD=HDMI,DEV=0`. |
 | `--audio-batching 0..3` | Audio packets the console collects before sending, default 1. |
 | `--av-offset MS` | Shift audio relative to video (positive = audio later). |
-| `--screen-off` | Turn the console screen off while streaming. |
+| `--keep-screen` | Do not turn the console screen off while streaming (it is turned off by default). |
 | `--test-file FILE.h264` | Replay an Annex-B file instead of using USB (decoder testing). |
 
 Environment variables for debugging: `SYSDVR_NOGL=1` disables the GPU output path, `SYSDVR_DUMP=file` saves the scanout buffer as raw XRGB, `SYSDVR_LATENCY=1` prints pipeline latency, `SYSDVR_SYNC=1` prints the audio/video skew, `SYSDVR_H264_INFO=1` prints stream properties, `SYSDVR_PROF=1` prints timing of the CPU conversion path.
