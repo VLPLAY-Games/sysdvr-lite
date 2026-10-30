@@ -25,13 +25,20 @@ The official client is a .NET application with an ImGui/SDL front end. On an Ora
 
 ## Status
 
-Tested on an Orange Pi Zero 2W with Armbian (Debian 13, kernel 6.18) and a real Switch (SysDVR 6.3, protocol 03) over USB: 720p30, no dropped frames, hot-plug works, hardware output is bit-exact with libavcodec on the test streams.
+Tested on an Orange Pi Zero 2W with Armbian (Debian 13, kernel 6.18) and a real Switch (SysDVR 6.3, protocol 03) over USB: 720p30, no dropped frames, hot-plug works, hardware output is bit-exact with libavcodec on the test streams. The full path (fresh Armbian image, `install.sh`, reboot, autostart, picture and sound) was verified on a clean system, and `update.sh` on an installed one.
 
 Measured on that setup: the software part of the pipeline (packet received over USB to frame on screen, measured at vblank) takes about 14 ms on average, 25 ms at worst. The console's own capture and encoding delay is not included. Audio plays on average about 20 ms behind the picture. No published latency figures for the official SysDVR clients exist to compare against.
 
 Decoder limits: progressive video only, no B-frames, no MMCO/long-term references, no scaling matrices, no FMO. This is not a practical limit: the console encoder always emits the same fixed stream (High profile, level 3.2, one reference frame, POC type 2, CABAC, one slice per frame, IDR every 30 frames), which is why the SysDVR sysmodule and clients hardcode its SPS/PPS. `SYSDVR_H264_INFO=1` prints the stream properties that were seen. An explicit error is logged if anything unsupported shows up.
 
 Not verified: other Allwinner boards (H616 variants should work but are untested), 1080p modes other than 1280x720 output (the picture is centered, never scaled).
+
+## Requirements
+
+- An **Orange Pi Zero 2W** running **Armbian** (Debian based, the tested image is Debian 13 "trixie" minimal/server with the `current` kernel). An 8 GB card is enough, the installed system uses about 2-3 GB.
+- A Nintendo Switch with the stock [SysDVR](https://github.com/exelix11/SysDVR) sysmodule set to **USB mode**, and a USB cable to the board's host-capable USB port.
+- An HDMI display (a TV or monitor with a 1280x720 mode).
+- Internet access on the board for the installation, and a correct system clock: the board has no battery-backed clock, so on a fresh image enable time sync first (`sudo timedatectl set-ntp true`, check with `timedatectl`), otherwise `apt` fails with "Release file is not valid yet".
 
 ## Quick install (Orange Pi Zero 2W only)
 
@@ -51,7 +58,15 @@ The board needs internet access during the install. The script:
 4. builds the client and installs it to `/usr/local/bin`,
 5. creates and enables the `sysdvr-lite` systemd service, so it starts at boot and waits for the Switch.
 
-If the CMA size changed, reboot afterwards (`sudo reboot`). Then set SysDVR to USB mode on the console, plug it in and the picture appears on the HDMI display.
+If the CMA size changed, the script tells you to reboot (`sudo reboot`). After that the service starts by itself at every boot: with SysDVR in USB mode on the console, plug it in and the picture appears on the HDMI display, no keyboard needed. Unplugging the console returns the display to the terminal, plugging it in again brings the picture back.
+
+Verify the installation:
+
+```bash
+systemctl is-active sysdvr-lite                 # active
+grep Cma /proc/meminfo                          # CmaTotal: 131072 kB
+journalctl -u sysdvr-lite -n 20 --no-pager      # cedrus / Mali-G31 / GPU conversion enabled
+```
 
 Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--no-cma`, `--yes` (no confirmation prompt).
 
@@ -64,6 +79,45 @@ sudo ./update.sh
 ```
 
 It pulls the latest code, rebuilds, installs the new binary and restarts the service. Packages, the CMA setting and your service options (decoder, audio device) are left untouched. Use `./update.sh --no-pull` to rebuild a local checkout without fetching. It needs the build tools that `install.sh` installed, so do not remove them.
+
+## Changing settings
+
+The service runs `sysdvr-lite` with the options from its unit file. To change the audio device or decoder, either re-run the installer with the options (it keeps your CMA setting and rewrites the unit, it runs `apt` again so it needs internet access):
+
+```bash
+sudo ./install.sh --yes --audio-device plughw:CARD=Codec,DEV=0 --decoder v4l2
+```
+
+or edit `ExecStart` in `/etc/systemd/system/sysdvr-lite.service` and apply it:
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart sysdvr-lite
+```
+
+`update.sh` never touches these options. All command line options are listed in [Usage](#usage).
+
+## Uninstalling
+
+```bash
+sudo systemctl disable --now sysdvr-lite
+sudo rm /etc/systemd/system/sysdvr-lite.service /usr/local/bin/sysdvr-lite
+sudo systemctl daemon-reload
+```
+
+To undo the CMA change, restore the backup that the installer made: `sudo cp /boot/armbianEnv.txt.sysdvr-lite.bak /boot/armbianEnv.txt` and reboot. Installed packages are left in place.
+
+## Troubleshooting
+
+| Symptom | What to check |
+|---|---|
+| `apt` says "Release file is not valid yet" during install | The clock is wrong: `sudo timedatectl set-ntp true`, wait until `timedatectl` shows `System clock synchronized: yes`. |
+| The installer refuses to run | It only supports the Orange Pi Zero 2W with Armbian/Debian. See the message for what was detected. |
+| No picture, nothing in the log about the console | `lsusb` must show `18d1:4ee0` (SysDVR). If not: SysDVR is not in USB mode, wrong cable (it must carry data), or the wrong USB port. |
+| No picture, `journalctl -u sysdvr-lite` shows errors | Missing `/dev/video0` means the Cedrus driver is not loaded (try `--decoder ffmpeg`). "decoder keeps failing" makes the service restart itself, send the log lines before it. |
+| Picture works but no sound | Pick the ALSA device with `aplay -L` and set it as shown in [Changing settings](#changing-settings). HDMI is `plughw:CARD=HDMI,DEV=0`. |
+| Audio and picture out of sync | Try `--av-offset` (milliseconds, positive = audio later) and `SYSDVR_SYNC=1` to see the measured skew. |
+| Black screen with the console unplugged | That is the terminal; log in on the display or over SSH. The picture returns on its own when the console is plugged in. |
+| High CPU | The log should say `GPU conversion enabled`. If it falls back to CPU conversion, install the GPU packages (see Manual build). |
 
 ## Manual build
 
