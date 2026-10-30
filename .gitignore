@@ -1,0 +1,5 @@
+build/
+*.h264
+*.yuv
+*.nv12
+*.xrgb
