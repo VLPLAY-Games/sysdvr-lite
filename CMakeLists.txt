@@ -63,6 +63,5 @@ if(FFMPEG_FOUND)
 endif()
 
 install(TARGETS sysdvr-lite RUNTIME DESTINATION bin)
-install(FILES tools/sysdvr-lite.service DESTINATION lib/systemd/system)
 
 message(STATUS "libusb=${LIBUSB_FOUND} ffmpeg=${FFMPEG_FOUND} alsa=${ALSA_FOUND} drm=${DRM_FOUND} gl=${GL_FOUND}")

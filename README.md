@@ -33,7 +33,29 @@ Not done or not verified:
 - Hardware decoder limits: progressive video only, no B-frames, no MMCO/long-term references, no scaling matrices, no FMO. An error is logged when one of these is hit. The Switch encoder does not use them in the games tested so far.
 - 720p only; the display output assumes the video size from the sysmodule.
 
-## Build
+## Quick install (Orange Pi Zero 2W only)
+
+> **The install script supports only the Orange Pi Zero 2W running Armbian (Debian based).** It refuses to run on any other board or distribution. On anything else, follow the manual instructions below.
+
+```bash
+git clone https://github.com/VLPLAY-Games/sysdvr-lite
+cd sysdvr-lite
+sudo ./install.sh
+```
+
+The board needs internet access during the install. The script:
+
+1. checks that it runs on an Orange Pi Zero 2W with Armbian/Debian,
+2. installs all build and runtime packages with `apt`,
+3. sets the CMA pool to 128 MB in `/boot/armbianEnv.txt` (a backup is saved next to it, skip with `--no-cma`),
+4. builds the client and installs it to `/usr/local/bin`,
+5. creates and enables the `sysdvr-lite` systemd service, so it starts at boot and waits for the Switch.
+
+If the CMA size changed, reboot afterwards (`sudo reboot`). Then set SysDVR to USB mode on the console, plug it in and the picture appears on the HDMI display.
+
+Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--no-cma`, `--yes` (no confirmation prompt).
+
+## Manual build
 
 Requirements: a C11 compiler, CMake, pkg-config. All libraries are optional and enable the matching feature when found.
 
@@ -85,6 +107,8 @@ On the Switch, set SysDVR to USB mode (or TCP bridge mode for `--tcp`). When no 
 
 ### Autostart (systemd)
 
+`install.sh` does this for you on the Orange Pi Zero 2W. On other systems:
+
 ```bash
 sudo cmake --install build --prefix /usr/local
 sudo cp tools/sysdvr-lite.service /etc/systemd/system/
@@ -97,7 +121,7 @@ Edit the `ExecStart` line to change decoder or audio device. Logs: `journalctl -
 ## Orange Pi Zero 2W notes
 
 - Tested with Armbian (current, kernel 6.18). The mainline `cedrus` driver exposes `/dev/video0` + `/dev/media0`, and the display engine has **no YUV planes**, which is why the GPU does the colour conversion.
-- Increase CMA if you see allocation errors: add `extraargs=cma=128M` to `/boot/armbianEnv.txt`.
+- `install.sh` raises CMA to 128 MB by adding `extraargs=cma=128M` to `/boot/armbianEnv.txt` (the default 64 MB is enough for 720p but leaves little headroom).
 - The Switch must be plugged into the USB port that works in host mode. Check with `lsusb` for `18d1:4ee0`.
 - HDMI audio device is usually `plughw:CARD=HDMI,DEV=0`, check with `aplay -L`.
 - `tools/probe_board.sh` prints everything relevant about a board (kernel, V4L2 nodes, DRM state).
@@ -122,6 +146,7 @@ src/decoder_*.c      null / ffmpeg / native V4L2 (Cedrus) decoders
 src/h264_parse.*     SPS, PPS and slice header parser for the V4L2 decoder
 src/sink_*.c         null, file and DRM/KMS (+EGL) outputs
 src/audio_alsa.c     ALSA playback
+install.sh           one-shot installer for the Orange Pi Zero 2W (Armbian)
 tools/               mock console, stream generator, reference decoder, board probe, service file
 docs/DESIGN.md       architecture and hardware notes
 ```
