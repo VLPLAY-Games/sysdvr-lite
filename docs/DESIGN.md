@@ -33,7 +33,7 @@ Facts established from the 6.18 kernel sources and by experiment:
 
 ## Display path (`sink_drm.c`)
 
-The mainline display engine of the H618 has only RGB planes. The decoder's NV12 dmabuf is imported as an `EGL_LINUX_DMA_BUF_EXT` image, sampled through `GL_OES_EGL_image_external` (BT.709, narrow range) and rendered into one of two dumb buffers that are shared with the GPU through dmabuf and flipped with the page-flip ioctl. The EGL context is created lazily in the drawing thread because contexts are per-thread. If the GPU path cannot be initialised, frames are converted on the CPU (reading uncached decoder memory is slow, so the frame is copied once first).
+The mainline display engine of the H618 has only RGB planes. The decoder's NV12 dmabuf is imported as an `EGL_LINUX_DMA_BUF_EXT` image, sampled through `GL_OES_EGL_image_external` (BT.709, narrow range) and rendered into one of two dumb buffers that are shared with the GPU through dmabuf and flipped with the page-flip ioctl. The EGL context is created lazily in the drawing thread because contexts are per-thread. When the stream is lost the reader thread calls `sink->idle()`: the console framebuffer saved at start is restored with `drmModeSetCrtc` and DRM master is dropped (a userspace master blocks the kernel console from drawing), so the terminal comes back. `sink->resume()` takes the display again when the next video packet arrives. A mutex orders these calls against `show()` running in the decode thread. If the GPU path cannot be initialised, frames are converted on the CPU (reading uncached decoder memory is slow, so the frame is copied once first).
 
 ## Ideas
 

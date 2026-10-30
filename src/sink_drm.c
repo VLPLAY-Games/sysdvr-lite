@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <pthread.h>
 #include <time.h>
 #include <unistd.h>
 #include <xf86drm.h>
@@ -31,6 +32,8 @@ typedef struct {
     uint32_t crtc, conn;
     drmModeModeInfo mode;
     drmModeCrtc *saved;
+    pthread_mutex_t lock;        /* show() runs in the decode thread, idle()/resume() in the reader thread */
+    int idle;
     dbuf buf[2];
     int back, flip_pending, first;
     uint64_t inflight_recv;      /* arrival time of the frame in the pending flip */
@@ -237,7 +240,7 @@ static int gl_draw(drm *d, const frame *f, dbuf *b)
 
 static double now_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e3 + t.tv_nsec * 1e-6; }
 
-static void show(sink *s, const frame *f)
+static void show_locked(sink *s, const frame *f)
 {
     drm *d = s->priv;
 #ifdef HAVE_GL
@@ -285,14 +288,52 @@ drawn:;
     if (getenv("SYSDVR_PROF") && ++n == 60) { fprintf(stderr, "drm avg ms: copy %.2f convert %.2f flip %.2f\n", t_cp / 60, t_cv / 60, t_fl / 60); n = 0; t_cp = t_cv = t_fl = 0; }
 }
 
+static void show(sink *s, const frame *f)
+{
+    drm *d = s->priv;
+    pthread_mutex_lock(&d->lock);
+    if (!d->idle) show_locked(s, f);          /* frames still in flight after the stream ended are dropped */
+    pthread_mutex_unlock(&d->lock);
+}
+
+/* Stream ended: put the console framebuffer back and let go of the display */
+static void idle(sink *s)
+{
+    drm *d = s->priv;
+    pthread_mutex_lock(&d->lock);
+    if (!d->idle) {
+        if (!d->first) {                      /* something was shown, so the mode was changed */
+            wait_flip(d);
+            if (d->saved && d->saved->buffer_id)
+                drmModeSetCrtc(d->fd, d->saved->crtc_id, d->saved->buffer_id, d->saved->x, d->saved->y, &d->conn, 1, &d->saved->mode);
+        }
+        drmDropMaster(d->fd);                 /* otherwise the kernel console cannot draw */
+        d->idle = 1;
+        d->first = 1;
+    }
+    pthread_mutex_unlock(&d->lock);
+}
+
+static void resume(sink *s)
+{
+    drm *d = s->priv;
+    pthread_mutex_lock(&d->lock);
+    if (d->idle) {
+        drmSetMaster(d->fd);
+        d->idle = 0;
+        d->first = 1;                         /* next frame sets the video mode again */
+    }
+    pthread_mutex_unlock(&d->lock);
+}
+
 static void cls(sink *s)
 {
     drm *d = s->priv;
-    wait_flip(d);
-    if (d->saved) {
+    if (!d->idle) wait_flip(d);
+    if (d->saved && !d->idle && !d->first) {
         drmModeSetCrtc(d->fd, d->saved->crtc_id, d->saved->buffer_id, d->saved->x, d->saved->y, &d->conn, 1, &d->saved->mode);
-        drmModeFreeCrtc(d->saved);
     }
+    if (d->saved) drmModeFreeCrtc(d->saved);
     for (int i = 0; i < 2; i++) {
         if (d->buf[i].map) munmap(d->buf[i].map, d->buf[i].size);
         if (d->buf[i].fb) drmModeRmFB(d->fd, d->buf[i].fb);
@@ -331,7 +372,8 @@ sink *sink_drm_new(const char *dev, int vw, int vh)
             d->mode.vrefresh, best >= 0 ? "" : " (no exact mode, video is centered)");
     if (make_buf(d, &d->buf[0]) || make_buf(d, &d->buf[1])) { fprintf(stderr, "drm: cannot create buffers\n"); return NULL; }
     d->first = 1;
+    pthread_mutex_init(&d->lock, NULL);
     sink *s = calloc(1, sizeof *s);
-    s->priv = d; s->show = show; s->close = cls;
+    s->priv = d; s->show = show; s->idle = idle; s->resume = resume; s->close = cls;
     return s;
 }

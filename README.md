@@ -19,6 +19,7 @@ The official client is a .NET application with an ImGui/SDL front end. On an Ora
   - `null`: discards data, for network and protocol testing.
 - Output without a window system: KMS/DRM with the display mode matched to the video, never scaled. Frames are imported as dmabuf into EGL/GLES and converted to RGB on the GPU straight into the scanout buffer. Falls back to a CPU conversion when no GPU stack is available.
 - Audio over ALSA (48 kHz stereo S16) with A/V synchronization: both streams carry console timestamps, the audio follows the picture. Video is never delayed.
+- When the console is unplugged, the display goes back to the terminal (no frozen last frame) and the picture returns when it is plugged in again.
 - Low-latency queues: when the decoder falls behind, old packets are dropped and decoding resumes at the next keyframe.
 - arm64 Linux only (the build refuses to configure on anything else).
 
@@ -53,6 +54,16 @@ The board needs internet access during the install. The script:
 If the CMA size changed, reboot afterwards (`sudo reboot`). Then set SysDVR to USB mode on the console, plug it in and the picture appears on the HDMI display.
 
 Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--no-cma`, `--yes` (no confirmation prompt).
+
+## Updating
+
+On the board, inside the cloned repository:
+
+```bash
+sudo ./update.sh
+```
+
+It pulls the latest code, rebuilds, installs the new binary and restarts the service. Packages, the CMA setting and your service options (decoder, audio device) are left untouched. Use `./update.sh --no-pull` to rebuild a local checkout without fetching. It needs the build tools that `install.sh` installed, so do not remove them.
 
 ## Manual build
 
@@ -148,6 +159,7 @@ src/h264_parse.*     SPS, PPS and slice header parser for the V4L2 decoder
 src/sink_*.c         null, file and DRM/KMS (+EGL) outputs
 src/audio_alsa.c     ALSA playback
 install.sh           one-shot installer for the Orange Pi Zero 2W (Armbian)
+update.sh            pull, rebuild and restart the service
 tools/               stream generator, reference decoder, comparison script, board probe, service file
 docs/DESIGN.md       architecture and hardware notes
 ```

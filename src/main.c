@@ -14,6 +14,7 @@
 
 static volatile int g_stop;
 static int g_exit_code;
+static sink *g_sink;
 static uint64_t g_recv_ns;                      /* arrival time of the packet being decoded */
 static int g_lat;                               /* SYSDVR_LATENCY=1: print latency statistics */
 
@@ -50,12 +51,14 @@ static void *reader_thread(void *arg)
 {
     reader_ctx *r = arg;
     uint8_t *payload = malloc(PKT_MAX_PAYLOAD);
+    int need_resume;
     while (!g_stop) {
         if (r->tr->open(r->tr)) {          /* console not there yet: keep waiting, it may be plugged in later */
             struct timespec ts = { 1, 0 };
             nanosleep(&ts, NULL);
             continue;
         }
+        need_resume = 1;
         for (;;) {
             pkt_header h;
             int rc = r->tr->next_packet(r->tr, &h, payload);
@@ -63,10 +66,17 @@ static void *reader_thread(void *arg)
             if (h.flags & META_ERROR) { fprintf(stderr, "console reported a capture error\n"); continue; }
             if (h.flags & META_REPLAY) continue;           /* we never enable NAL replay */
             if (!h.size) continue;
-            if ((h.flags & META_VIDEO) && r->vq) pqueue_push(r->vq, &h, payload);
+            if ((h.flags & META_VIDEO) && r->vq) {
+                if (need_resume) {                          /* picture is coming: take the display back */
+                    if (g_sink && g_sink->resume) g_sink->resume(g_sink);
+                    need_resume = 0;
+                }
+                pqueue_push(r->vq, &h, payload);
+            }
             else if ((h.flags & META_AUDIO) && r->aq) pqueue_push(r->aq, &h, payload);
         }
         fprintf(stderr, "stream lost, reconnecting\n");
+        if (g_sink && g_sink->idle) g_sink->idle(g_sink);      /* back to the terminal instead of a frozen frame */
     }
 out:
     free(payload);
@@ -145,7 +155,6 @@ static void *audio_thread(void *arg)
     return NULL;
 }
 
-static sink *g_sink;
 static void on_frame(void *ctx, const frame *f)
 {
     frame g = *f;
