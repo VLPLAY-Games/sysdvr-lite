@@ -4,7 +4,7 @@ After=systemd-udevd.service sound.target
 Wants=sound.target
 
 [Service]
-ExecStart=/usr/local/bin/sysdvr-lite --usb --decoder v4l2 --drm --audio-device plughw:CARD=HDMI,DEV=0
+ExecStart=/usr/local/bin/sysdvr-lite --decoder v4l2 --drm --audio-device plughw:CARD=HDMI,DEV=0
 Restart=always
 RestartSec=2
 # a real-time-ish feel: keep the decode thread from being starved

@@ -3,14 +3,14 @@
 ## Protocol (checked against the SysDVR source, not only protocol.md)
 
 - Packet header, 18 bytes little endian: magic `CCCCCCCC`, size u32, timestamp u64 (microseconds), flags u8, replay slot u8. Flags: bit0 video, bit1 audio, bit2 data, bit3 replay, bit4 multi-NAL, bit5 error. Maximum payload `0x54000`.
-- TCP: video on port 9911, audio on 9922, one socket per stream, each with its own handshake. USB: VID `18D1` / PID `4EE0`, bulk endpoints, one multiplexed stream, each packet read as a single transfer.
+- USB: VID `18D1` / PID `4EE0`, bulk endpoints, one multiplexed stream, each packet read as a single transfer. (The TCP bridge of the sysmodule is not supported by this client.)
 - Handshake: the console sends `SysDVR|NN\0` (10 bytes), the client answers with a 16-byte request (`AAAAAAAA`, version, MetaFlags, VideoFlags, AudioBatching, FeatureFlags, 6 reserved), the console replies with a u32 result (6 = OK; 72 bytes for protocol 03).
 - Video is Annex-B H.264, 1280x720@30, with SPS/PPS injected by the console. NAL replay is not enabled.
 
 ## Architecture
 
 ```
-transport (tcp x2 | usb) -> reader thread -> pqueue (drop oldest) -> decode thread -> sink
+transport (usb | test file) -> reader thread -> pqueue (drop oldest) -> decode thread -> sink
                                           -> pqueue               -> audio thread (ALSA)
 ```
 
@@ -37,7 +37,13 @@ The mainline display engine of the H618 has only RGB planes. The decoder's NV12 
 
 ## Ideas
 
-- Audio/video synchronization using the packet timestamps.
 - End-to-end latency measurement.
 - Support for more decoder features (B-frames, MMCO) if some game needs them.
-- x86-64 hardware backends (VA-API) for desktop use.
+
+## Audio/video synchronization
+
+Packets carry timestamps (microseconds) taken from the same console clock for both streams. Video is presented as soon as it is decoded, never delayed. The audio thread computes the console timestamp of the sample that is audible right now (`packet.ts - ALSA delay`) and compares it with the timestamp of the frame last handed to the display. A skew within [-120 ms, +40 ms] is left alone, beyond that audio packets are skipped (audio late) or silence is inserted (audio early). Audio is naturally a little late because the console sends it in batches; measured on a real console the best setting is `--audio-batching 1` (average skew about -20 ms, no corrections needed), 0 and 3 were worse (-80 ms and -108 ms).
+
+## Console stream properties
+
+Measured with `SYSDVR_H264_INFO=1`: High profile, level 3.2, 1 reference frame, POC type 2, CABAC with 8x8 transform, no weighted prediction, one slice per picture, IDR every 30 pictures, no B-frames, no MMCO, no reordering commands. The hardware decoder therefore needs none of the features it rejects.

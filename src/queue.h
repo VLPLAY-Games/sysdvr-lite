@@ -2,7 +2,7 @@
 #define QUEUE_H
 #include "proto.h"
 
-typedef struct { pkt_header h; uint8_t *data; } qpkt;
+typedef struct { pkt_header h; uint8_t *data; uint64_t recv_ns; } qpkt;   /* recv_ns: CLOCK_MONOTONIC when queued */
 
 typedef struct pqueue pqueue;
 pqueue *pqueue_new(int cap);

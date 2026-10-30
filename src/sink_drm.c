@@ -33,6 +33,8 @@ typedef struct {
     drmModeCrtc *saved;
     dbuf buf[2];
     int back, flip_pending, first;
+    uint64_t inflight_recv;      /* arrival time of the frame in the pending flip */
+    double lat_sum, lat_max; unsigned lat_n;
 #ifdef HAVE_GL
     int gl_ok, gl_tried, gbm_fd;
     struct gbm_device *gbm;
@@ -89,12 +91,25 @@ static void convert(const frame *f, dbuf *b, int bw, int bh)
     }
 }
 
+static void on_flip(int fd, unsigned seq, unsigned sec, unsigned usec, void *data)
+{
+    drm *d = data;
+    if (!getenv("SYSDVR_LATENCY") || !d->inflight_recv) return;
+    /* vblank time of the flip (CLOCK_MONOTONIC) minus the arrival time of the frame's packet */
+    double ms = ((uint64_t)sec * 1000000ull + usec) / 1e3 - d->inflight_recv / 1e6;
+    d->lat_sum += ms; if (ms > d->lat_max) d->lat_max = ms;
+    if (++d->lat_n == 150) {
+        fprintf(stderr, "latency ms: arrival -> on screen (vblank) avg %.2f max %.2f\n", d->lat_sum / d->lat_n, d->lat_max);
+        d->lat_sum = d->lat_max = 0; d->lat_n = 0;
+    }
+}
+
 static void wait_flip(drm *d)
 {
     while (d->flip_pending) {
         struct pollfd p = { d->fd, POLLIN, 0 };
         if (poll(&p, 1, 100) <= 0) { d->flip_pending = 0; break; }
-        drmEventContext ev = { .version = 2, .page_flip_handler = NULL };
+        drmEventContext ev = { .version = 3, .page_flip_handler = on_flip };
         drmHandleEvent(d->fd, &ev);
         d->flip_pending = 0;     /* only one flip in flight */
     }
@@ -261,6 +276,7 @@ drawn:;
         d->first = 0;
     } else {
         wait_flip(d);
+        d->inflight_recv = f->recv_ns;
         if (!drmModePageFlip(d->fd, d->crtc, b->fb, DRM_MODE_PAGE_FLIP_EVENT, d)) d->flip_pending = 1;
     }
     d->back ^= 1;

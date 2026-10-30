@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 struct pqueue {
     qpkt *items; int cap, head, count, closed;
@@ -30,7 +31,8 @@ void pqueue_push(pqueue *q, const pkt_header *h, const uint8_t *data)
         q->count--; q->dropped++;
     }
     qpkt *s = &q->items[(q->head + q->count++) % q->cap];
-    s->h = *h; s->data = copy;
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    s->h = *h; s->data = copy; s->recv_ns = ts.tv_sec * 1000000000ull + ts.tv_nsec;
     pthread_cond_signal(&q->cv);
     pthread_mutex_unlock(&q->m);
 }

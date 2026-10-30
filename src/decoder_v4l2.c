@@ -43,6 +43,8 @@ typedef struct {
     /* per-packet scratch */
     struct { const uint8_t *nal; size_t len; } slices[16]; int n_slices;
     int fatal;
+    int info; unsigned st_pics, st_type[5], st_mmco, st_mod, st_pw, st_nonref, st_multi, st_idr;
+    uint64_t console_ts;       /* timestamp of the packet being decoded, passed through to the frame */
 } v4l2d;
 
 static int xioctl(int fd, unsigned long req, void *arg)
@@ -201,6 +203,17 @@ static int decode_picture(v4l2d *d, int ns)
     const h264_slice *s0 = &sl[0];
     const h264_pps *pps = &d->pps[s0->pps_id];
     const h264_sps *sps = &d->sps[pps->sps_id];
+    if (d->info) {                       /* SYSDVR_H264_INFO=1: which H264 features does this console/game use? */
+        d->st_pics++; d->st_type[s0->slice_type]++;
+        d->st_mmco += s0->mmco_present; d->st_mod += s0->n_mod[0] + s0->n_mod[1]; d->st_pw += s0->has_pred_weights;
+        d->st_nonref += !s0->nal_ref_idc; d->st_multi += ns > 1; d->st_idr += s0->is_idr;
+        if (d->st_pics == 1) fprintf(stderr, "h264: profile %d level %d refs %d poc_type %d frame_mbs_only %d cabac %d t8x8 %d wpred %d bipred %d %dx%d\n",
+            sps->v4l2.profile_idc, sps->v4l2.level_idc, sps->v4l2.max_num_ref_frames, sps->poc_type, sps->frame_mbs_only,
+            !!(pps->v4l2.flags & V4L2_H264_PPS_FLAG_ENTROPY_CODING_MODE), !!(pps->v4l2.flags & V4L2_H264_PPS_FLAG_TRANSFORM_8X8_MODE),
+            !!(pps->v4l2.flags & V4L2_H264_PPS_FLAG_WEIGHTED_PRED), pps->v4l2.weighted_bipred_idc, sps->width, sps->height);
+        if (d->st_pics % 300 == 0) fprintf(stderr, "h264: %u pictures: P %u B %u I %u | idr %u nonref %u multislice %u | mmco %u reorder-cmds %u predweights %u\n",
+            d->st_pics, d->st_type[0], d->st_type[1], d->st_type[2], d->st_idr, d->st_nonref, d->st_multi, d->st_mmco, d->st_mod, d->st_pw);
+    }
     if (s0->slice_type == V4L2_H264_SLICE_TYPE_B) { fprintf(stderr, "cedrus: B slices are not supported yet\n"); return -1; }
 
     if (s0->is_idr) for (int i = 0; i < MAX_REFS; i++) drop_ref(d, &d->refs[i]);
@@ -322,7 +335,7 @@ static int decode_picture(v4l2d *d, int ns)
     if (xioctl(d->vfd, VIDIOC_DQBUF, &cb)) { perror("DQBUF cap"); return -1; }
     if (cb.flags & V4L2_BUF_FLAG_ERROR) fprintf(stderr, "cedrus: frame decoded with error flag\n");
 
-    frame f = { .width = d->width, .height = d->height, .fmt = PIX_NV12, .dmabuf_fd = d->capfd[cb.index], .buf_id = cb.index, .uncached = 1, .ts = ts };
+    frame f = { .width = d->width, .height = d->height, .fmt = PIX_NV12, .dmabuf_fd = d->capfd[cb.index], .buf_id = cb.index, .uncached = 1, .ts = d->console_ts };
     f.data[0] = d->cap[cb.index].map; f.stride[0] = d->stride;
     f.data[1] = f.data[0] + (size_t)d->stride * d->height; f.stride[1] = d->stride;
     d->self->cb(d->self->cb_ctx, &f);
@@ -349,6 +362,7 @@ static int v4l2_decode(decoder *dd, const uint8_t *data, size_t len, uint64_t ts
 {
     v4l2d *d = dd->priv;
     if (d->fatal) return -1;
+    d->console_ts = ts;
     d->n_slices = 0;
     h264_split_annexb(data, len, on_nal, d);
     if (d->fatal) return -1;
@@ -381,6 +395,7 @@ decoder *decoder_v4l2_new(const decoder_opts *o)
         return NULL;
     }
     d->prefix = getenv("SYSDVR_STARTCODE") ? 3 : 0;      /* experiment knob, see docs */
+    d->info = getenv("SYSDVR_H264_INFO") != NULL;
     decoder *dd = calloc(1, sizeof *dd);
     dd->decode = v4l2_decode; dd->close = v4l2_close; dd->priv = d; d->self = dd;
     return dd;

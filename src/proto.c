@@ -1,4 +1,6 @@
 #include "proto.h"
+#include "transport.h"
+#include <stdio.h>
 #include <string.h>
 
 static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
@@ -41,4 +43,30 @@ void req_build(uint8_t o[REQ_SIZE], uint8_t v[2], int kind, int audio_batching, 
     o[7] = 1 << 1;                     /* VideoFlags: InjectPPSSPS (NAL replay left off) */
     o[8] = (uint8_t)audio_batching;
     o[9] = (version_is_v3(v) && turn_off_screen) ? 1 : 0;   /* FeatureFlags bit0 */
+}
+
+int proto_handshake(const hs_io *io, int kind, const stream_opts *o)
+{
+    uint8_t hello[HELLO_SIZE], ver[2];
+    if (io->read_exact(io->ctx, hello, HELLO_SIZE) || hello_parse(hello, ver)) {
+        fprintf(stderr, "bad hello packet\n");
+        return -1;
+    }
+    if (!version_supported(ver)) {
+        fprintf(stderr, "unsupported protocol version %c%c\n", ver[0], ver[1]);
+        return -1;
+    }
+    uint8_t req[REQ_SIZE];
+    req_build(req, ver, kind, o->audio_batching, o->turn_off_screen);
+    if (io->write_all(io->ctx, req, REQ_SIZE)) return -1;
+
+    uint8_t resp[RESP03_SIZE];
+    size_t rn = version_is_v3(ver) ? RESP03_SIZE : RESP02_SIZE;
+    if (io->read_exact(io->ctx, resp, rn)) return -1;
+    uint32_t code = resp[0] | resp[1] << 8 | resp[2] << 16 | (uint32_t)resp[3] << 24;
+    if (code != HANDSHAKE_OK) {
+        fprintf(stderr, "handshake rejected, code %u\n", code);
+        return -1;
+    }
+    return 0;
 }

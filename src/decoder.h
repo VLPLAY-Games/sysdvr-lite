@@ -17,6 +17,7 @@ typedef struct {
     int buf_id;              /* stable id of the underlying buffer, key for caching imports */
     int uncached;            /* data lives in non-cacheable (dma) memory: copy before heavy CPU reads */
     uint64_t ts;
+    uint64_t recv_ns;        /* when the packet carrying this frame arrived (latency stats) */
 } frame;
 
 typedef void (*frame_cb)(void *ctx, const frame *f);

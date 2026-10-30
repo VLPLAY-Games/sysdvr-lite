@@ -96,7 +96,7 @@ cmake --install "$BUILD_DIR" --prefix "$PREFIX"
 
 # ---- service --------------------------------------------------------------------------------
 step "Installing the systemd service"
-EXEC="$PREFIX/bin/sysdvr-lite --usb --decoder $DECODER --drm --audio-device $AUDIO_DEVICE"
+EXEC="$PREFIX/bin/sysdvr-lite --decoder $DECODER --drm --audio-device $AUDIO_DEVICE"
 cat > /etc/systemd/system/sysdvr-lite.service <<UNIT
 [Unit]
 Description=SysDVR lite client (Switch over USB -> HDMI)

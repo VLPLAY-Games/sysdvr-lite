@@ -88,6 +88,8 @@ static void usb_close(transport *t)
     u->h = NULL;
 }
 
+static void usb_destroy(transport *t);
+
 transport *transport_usb_new(const stream_opts *o)
 {
     usb_ctx *u = calloc(1, sizeof *u);
@@ -95,6 +97,22 @@ transport *transport_usb_new(const stream_opts *o)
     u->opts = *o;
     u->buf = malloc(PKT_MAX_TRANSFER);
     transport *t = calloc(1, sizeof *t);
-    t->priv = u; t->open = usb_open; t->next_packet = usb_next; t->close = usb_close;
+    t->priv = u; t->open = usb_open; t->next_packet = usb_next; t->close = usb_close; t->destroy = usb_destroy;
     return t;
+}
+
+static void usb_destroy(transport *t)
+{
+    usb_ctx *u = t->priv;
+    if (u->ctx) libusb_exit(u->ctx);
+    free(u->buf);
+    free(u);
+}
+
+void transport_free(transport *t)
+{
+    if (!t) return;
+    t->close(t);
+    if (t->destroy) t->destroy(t); else free(t->priv);
+    free(t);
 }

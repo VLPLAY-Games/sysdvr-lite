@@ -1,41 +1,40 @@
 # sysdvr-lite
 
-A tiny, dependency-light PC client for [SysDVR](https://github.com/exelix11/SysDVR) written in C, built for single-board computers that cannot afford the official .NET client.
+A tiny, dependency-light client for [SysDVR](https://github.com/exelix11/SysDVR) written in C, built for the Orange Pi Zero 2W (Allwinner H618, arm64 Linux) which cannot afford the official .NET client.
 
-It receives the video and audio stream of a Nintendo Switch over **USB** (or the TCP bridge) and shows it on an HDMI display without X11 or Wayland. On the target board (Orange Pi Zero 2W, Allwinner H618) it decodes 720p30 with the **hardware H.264 decoder** and scans the picture out through the **GPU**, using about 5-8% of one CPU core.
+It receives the video and audio stream of a Nintendo Switch over **USB** and shows it on an HDMI display without X11 or Wayland. On the target board (Orange Pi Zero 2W, Allwinner H618) it decodes 720p30 with the **hardware H.264 decoder** and scans the picture out through the **GPU**, using about 5-8% of one CPU core.
 
 > The Switch side (the SysDVR sysmodule) is **not modified**. Install the stock SysDVR release on the console and use this program instead of the official client.
 
 ## Why
 
-The official client is a .NET application with an ImGui/SDL front end. On an Orange Pi Zero 2W it only managed a slideshow at 720p30, even with the software decoder, because of runtime and conversion overhead. This client keeps the whole pipeline in C with pluggable backends, so you can pick the decoder that works best on your hardware.
+The official client is a .NET application with an ImGui/SDL front end. On an Orange Pi Zero 2W it only managed a slideshow at 720p30, even with the software decoder, because of runtime and conversion overhead. This client keeps the whole pipeline in C and uses the board's hardware decoder.
 
 ## Features
 
-- SysDVR protocol 02 and 03: USB (libusb) and TCP bridge transports, hot-plug with automatic reconnect, resync after corrupted TCP headers.
+- SysDVR protocol 02 and 03 over USB (libusb), with hot-plug and automatic reconnect.
 - Pluggable video decoders:
   - `v4l2`: native stateless V4L2 H.264 decoding for the Allwinner **Cedrus** VPU (H616/H618, mainline kernel). No ffmpeg involved. Includes its own SPS/PPS/slice-header parser.
-  - `ffmpeg`: software decoding via libavcodec (or any libavcodec decoder by name), low-delay settings.
+  - `ffmpeg`: software fallback via libavcodec (or any libavcodec decoder by name), low-delay settings.
   - `null`: discards data, for network and protocol testing.
 - Output without a window system: KMS/DRM with the display mode matched to the video, never scaled. Frames are imported as dmabuf into EGL/GLES and converted to RGB on the GPU straight into the scanout buffer. Falls back to a CPU conversion when no GPU stack is available.
-- Audio over ALSA (48 kHz stereo S16).
+- Audio over ALSA (48 kHz stereo S16) with A/V synchronization: both streams carry console timestamps, the audio follows the picture. Video is never delayed.
 - Low-latency queues: when the decoder falls behind, old packets are dropped and decoding resumes at the next keyframe.
-- Runs on arm64 and x86-64 Linux.
+- arm64 Linux only (the build refuses to configure on anything else).
 
 ## Status
 
 Tested on an Orange Pi Zero 2W with Armbian (Debian 13, kernel 6.18) and a real Switch (SysDVR 6.3, protocol 03) over USB: 720p30, no dropped frames, hot-plug works, hardware output is bit-exact with libavcodec on the test streams.
 
-Not done or not verified:
+Measured on that setup: the software part of the pipeline (packet received over USB to frame on screen, measured at vblank) takes about 14 ms on average, 25 ms at worst. The console's own capture and encoding delay is not included. Audio plays on average about 20 ms behind the picture. No published latency figures for the official SysDVR clients exist to compare against.
 
-- The x86-64 build is only compiled, the hardware path is specific to Allwinner Cedrus. Use `--decoder ffmpeg` elsewhere.
-- No audio/video synchronization (audio is played as it arrives).
-- Hardware decoder limits: progressive video only, no B-frames, no MMCO/long-term references, no scaling matrices, no FMO. An error is logged when one of these is hit. The Switch encoder does not use them in the games tested so far.
-- 720p only; the display output assumes the video size from the sysmodule.
+Decoder limits: progressive video only, no B-frames, no MMCO/long-term references, no scaling matrices, no FMO. This is not a practical limit: the console encoder always emits the same fixed stream (High profile, level 3.2, one reference frame, POC type 2, CABAC, one slice per frame, IDR every 30 frames), which is why the SysDVR sysmodule and clients hardcode its SPS/PPS. `SYSDVR_H264_INFO=1` prints the stream properties that were seen. An explicit error is logged if anything unsupported shows up.
+
+Not verified: other Allwinner boards (H616 variants should work but are untested), 1080p modes other than 1280x720 output (the picture is centered, never scaled).
 
 ## Quick install (Orange Pi Zero 2W only)
 
-> **The install script supports only the Orange Pi Zero 2W running Armbian (Debian based).** It refuses to run on any other board or distribution. On anything else, follow the manual instructions below.
+> **The install script supports only the Orange Pi Zero 2W running Armbian (Debian based).** It refuses to run on any other board or distribution. The client itself only builds for arm64 Linux.
 
 ```bash
 git clone https://github.com/VLPLAY-Games/sysdvr-lite
@@ -61,8 +60,8 @@ Requirements: a C11 compiler, CMake, pkg-config. All libraries are optional and 
 
 | Feature | Debian/Ubuntu packages |
 |---|---|
-| USB transport | `libusb-1.0-0-dev` |
-| Software decoder | `libavcodec-dev libavutil-dev` |
+| USB transport (required) | `libusb-1.0-0-dev` |
+| Software decoder fallback | `libavcodec-dev libavutil-dev` |
 | Audio | `libasound2-dev` |
 | DRM/KMS output | `libdrm-dev` |
 | GPU conversion | `libgbm-dev libegl-dev libgles-dev libgl1-mesa-dri libegl-mesa0` |
@@ -81,17 +80,15 @@ The configure step prints which features were enabled.
 ## Usage
 
 ```bash
-# Switch over USB, hardware decoder, HDMI output
-./build/sysdvr-lite --usb --decoder v4l2 --drm
-
-# Switch over the network (TCP bridge mode in the sysmodule)
-./build/sysdvr-lite --tcp 192.168.1.20 --decoder ffmpeg --threads 3 --drm
+# Switch over USB, hardware decoder, HDMI output (this is what the service runs)
+./build/sysdvr-lite --decoder v4l2 --drm --audio-device plughw:CARD=HDMI,DEV=0
 ```
+
+The client waits until a console running SysDVR in **USB mode** shows up, and reconnects after it is unplugged.
 
 | Option | Description |
 |---|---|
-| `--usb` / `--tcp HOST` | Transport. Exactly one is required. |
-| `--decoder null\|ffmpeg\|v4l2` | Video backend, default `ffmpeg`. |
+| `--decoder null\|ffmpeg\|v4l2` | Video backend, default `ffmpeg`. Use `v4l2` for the hardware decoder. |
 | `--threads N` | Threads of the software decoder. |
 | `--ffmpeg-name NAME` | Use a specific libavcodec decoder. |
 | `--video-device /dev/videoN` | Device node for the `v4l2` backend, default `/dev/video0`. |
@@ -99,15 +96,16 @@ The configure step prints which features were enabled.
 | `--out FILE` | Write raw decoded frames to a file instead of displaying them. |
 | `--no-audio` / `--no-video` | Disable a stream. |
 | `--audio-device NAME` | ALSA device, e.g. `plughw:CARD=HDMI,DEV=0`. |
-| `--screen-off` | Turn the console screen off while streaming (protocol 03). |
+| `--audio-batching 0..3` | Audio packets the console collects before sending, default 1. |
+| `--av-offset MS` | Shift audio relative to video (positive = audio later). |
+| `--screen-off` | Turn the console screen off while streaming. |
+| `--test-file FILE.h264` | Replay an Annex-B file instead of using USB (decoder testing). |
 
-Environment variables for debugging: `SYSDVR_NOGL=1` disables the GPU output path, `SYSDVR_DUMP=file` saves the scanout buffer as raw XRGB, `SYSDVR_PROF=1` prints timing of the CPU conversion path.
-
-On the Switch, set SysDVR to USB mode (or TCP bridge mode for `--tcp`). When no console is connected, the client simply waits and starts streaming as soon as one appears.
+Environment variables for debugging: `SYSDVR_NOGL=1` disables the GPU output path, `SYSDVR_DUMP=file` saves the scanout buffer as raw XRGB, `SYSDVR_LATENCY=1` prints pipeline latency, `SYSDVR_SYNC=1` prints the audio/video skew, `SYSDVR_H264_INFO=1` prints stream properties, `SYSDVR_PROF=1` prints timing of the CPU conversion path.
 
 ### Autostart (systemd)
 
-`install.sh` does this for you on the Orange Pi Zero 2W. On other systems:
+`install.sh` does this for you. To do it by hand:
 
 ```bash
 sudo cmake --install build --prefix /usr/local
@@ -128,26 +126,29 @@ Edit the `ExecStart` line to change decoder or audio device. Logs: `journalctl -
 
 ## Testing without a console
 
+The test file option replays a stream at 30 fps through the whole pipeline:
+
 ```bash
-./build/gen-h264 test.h264 1          # 720p30 test stream, 1 slice per frame (4 = multi-slice)
-./build/mock-switch test.h264         # fake sysmodule on ports 9911/9922
-./build/sysdvr-lite --tcp 127.0.0.1 --decoder v4l2 --no-audio --out hw.nv12
-./build/ref-decode test.h264 ref.yuv  # offline libavcodec reference
-python3 tools/compare_yuv.py ref.yuv hw.nv12   # checks the hardware output is bit-exact
+./build/gen-h264 test.h264 1                         # 720p30 test stream, 1 slice per frame (4 = multi-slice)
+./build/ref-decode test.h264 ref.yuv                 # offline libavcodec reference
+./build/sysdvr-lite --decoder v4l2 --test-file test.h264 --out /tmp/hw.nv12
+python3 tools/compare_yuv.py ref.yuv /tmp/hw.nv12    # checks the hardware output is bit-exact
 ```
+
+Stop the service first (`systemctl stop sysdvr-lite`), only one program can use the decoder at a time, and write the output to a RAM disk like `/tmp`: an SD card cannot keep up with 40 MB/s of raw frames.
 
 ## Layout
 
 ```
 src/proto.*          wire format, handshake request building
-src/transport_*.c    USB and TCP transports
+src/transport_*.c    USB transport and the test-file replay
 src/queue.*          drop-oldest packet queue
 src/decoder_*.c      null / ffmpeg / native V4L2 (Cedrus) decoders
 src/h264_parse.*     SPS, PPS and slice header parser for the V4L2 decoder
 src/sink_*.c         null, file and DRM/KMS (+EGL) outputs
 src/audio_alsa.c     ALSA playback
 install.sh           one-shot installer for the Orange Pi Zero 2W (Armbian)
-tools/               mock console, stream generator, reference decoder, board probe, service file
+tools/               stream generator, reference decoder, comparison script, board probe, service file
 docs/DESIGN.md       architecture and hardware notes
 ```
 
