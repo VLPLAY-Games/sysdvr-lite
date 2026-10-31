@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Updates sysdvr-lite on a board where install.sh has been run before:
-# pulls the latest code, rebuilds, installs the new binary and restarts the service.
-# It does not touch packages, the CMA setting or your service options (decoder, audio device).
+# pulls the latest code, installs any build package that is missing (for example if you removed it),
+# rebuilds, installs the new binary and restarts the service.
+# It does not touch the CMA setting or your service options (decoder, audio device).
 #
 # Usage: sudo ./update.sh [--no-pull]     (--no-pull: rebuild the current checkout only)
 set -euo pipefail
@@ -13,7 +14,7 @@ UNIT=sysdvr-lite.service
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-pull) PULL=0; shift ;;
-        -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -21,14 +22,34 @@ done
 die()  { echo "error: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
 
+# packages that are not installed (dpkg status "installed") out of the given names
+missing_packages() {
+    local p
+    for p in "$@"; do
+        [ "$(dpkg-query -W -f='${db:Status-Status}' "$p" 2>/dev/null || true)" = installed ] || echo "$p"
+    done
+}
+
+# installs what is missing from the given names, does nothing when everything is there
+ensure_packages() {
+    local missing
+    mapfile -t missing < <(missing_packages "$@")
+    [ "${#missing[@]}" -gt 0 ] || { echo "all packages are installed"; return; }
+    echo "missing packages: ${missing[*]}"
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update || die "apt-get update failed: check the internet connection and the system clock"
+    apt-get install -y --no-install-recommends "${missing[@]}" || die "could not install: ${missing[*]}"
+}
+
 [ "$(id -u)" -eq 0 ] || die "run as root: sudo ./update.sh"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-command -v cmake >/dev/null || die "cmake not found, run ./install.sh first"
 [ -f "/etc/systemd/system/$UNIT" ] || die "the service is not installed, run ./install.sh first"
+[ -f "$HERE/packages.txt" ] || die "$HERE/packages.txt not found: this is not a complete sysdvr-lite checkout"
 
 if [ "$PULL" -eq 1 ]; then
     step "Fetching the latest version"
     [ -d "$HERE/.git" ] || die "$HERE is not a git checkout (use --no-pull to just rebuild)"
+    ensure_packages git ca-certificates
     OLD="$(git -C "$HERE" rev-parse --short HEAD)"
     # run git as the owner of the checkout, so files do not become root-owned
     OWNER="$(stat -c %U "$HERE")"
@@ -40,6 +61,13 @@ if [ "$PULL" -eq 1 ]; then
     NEW="$(git -C "$HERE" rev-parse --short HEAD)"
     if [ "$OLD" = "$NEW" ]; then echo "already up to date ($NEW)"; else echo "updated $OLD -> $NEW"; fi
 fi
+
+# read after the pull: the new version may need more packages
+step "Checking the build packages"
+[ -f "$HERE/packages.txt" ] || die "$HERE/packages.txt not found after the pull"
+mapfile -t PACKAGES < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/packages.txt")
+[ "${#PACKAGES[@]}" -gt 0 ] || die "$HERE/packages.txt lists no packages"
+ensure_packages "${PACKAGES[@]}"
 
 step "Building"
 cmake -S "$HERE" -B "$HERE/build" -G Ninja -DCMAKE_BUILD_TYPE=Release

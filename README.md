@@ -1,5 +1,7 @@
 # sysdvr-lite
 
+<p align="center"><b>English</b> &nbsp;|&nbsp; <a href="README.ru.md">Русский</a></p>
+
 A tiny, dependency-light client for [SysDVR](https://github.com/exelix11/SysDVR) written in C, built for the Orange Pi Zero 2W (Allwinner H618, arm64 Linux) which cannot afford the official .NET client.
 
 It receives the video and audio stream of a Nintendo Switch over **USB** and shows it on an HDMI display without X11 or Wayland. On the target board (Orange Pi Zero 2W, Allwinner H618) it decodes 720p30 with the **hardware H.264 decoder** and scans the picture out through the **GPU**, using about 5-8% of one CPU core.
@@ -39,11 +41,19 @@ Not verified: other Allwinner boards (H616 variants should work but are untested
 - An **Orange Pi Zero 2W** running **Armbian** (Debian based, the tested image is Debian 13 "trixie" minimal/server with the `current` kernel). An 8 GB card is enough, the installed system uses about 2-3 GB.
 - A Nintendo Switch with the stock [SysDVR](https://github.com/exelix11/SysDVR) sysmodule set to **USB mode**, and a USB cable to the board's host-capable USB port.
 - An HDMI display (a TV or monitor with a 1280x720 mode).
-- Internet access on the board for the installation, and a correct system clock: the board has no battery-backed clock, so on a fresh image enable time sync first (`sudo timedatectl set-ntp true`, check with `timedatectl`), otherwise `apt` fails with "Release file is not valid yet".
+- Internet access on the board for the installation. The system clock does not need to be set up by hand: the board has no battery-backed clock, and `install.sh` turns on network time itself if the clock is not synchronized (otherwise `apt` fails with "Release file is not valid yet").
 
 ## Quick install (Orange Pi Zero 2W only)
 
 > **The install script supports only the Orange Pi Zero 2W running Armbian (Debian based).** It refuses to run on any other board or distribution. The client itself only builds for arm64 Linux.
+
+One command, nothing to download first (it asks for confirmation, add `-s -- --yes` after `bash` to skip the question):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VLPLAY-Games/sysdvr-lite/main/install.sh | sudo bash
+```
+
+The script clones the repository to `/opt/sysdvr-lite` (change with `--dir`). You can also clone it yourself and run it from the checkout:
 
 ```bash
 git clone https://github.com/VLPLAY-Games/sysdvr-lite
@@ -54,10 +64,12 @@ sudo ./install.sh
 The board needs internet access during the install. The script:
 
 1. checks that it runs on an Orange Pi Zero 2W with Armbian/Debian,
-2. installs all build and runtime packages with `apt`,
-3. sets the CMA pool to 128 MB in `/boot/armbianEnv.txt` (a backup is saved next to it, skip with `--no-cma`),
-4. builds the client and installs it to `/usr/local/bin`,
-5. creates and enables the `sysdvr-lite` systemd service, so it starts at boot and waits for the Switch.
+2. turns on network time if the clock is not synchronized, and waits for it,
+3. installs git if it is missing and clones the repository (skipped when run from a checkout),
+4. installs all build and runtime packages from `packages.txt` with `apt`,
+5. sets the CMA pool to 128 MB in `/boot/armbianEnv.txt` (a backup is saved next to it, skip with `--no-cma`),
+6. builds the client and installs it to `/usr/local/bin`,
+7. creates and enables the `sysdvr-lite` systemd service, so it starts at boot and waits for the Switch.
 
 If the CMA size changed, the script tells you to reboot (`sudo reboot`). After that the service starts by itself at every boot: with SysDVR in USB mode on the console, plug it in and the picture appears on the HDMI display, no keyboard needed. Unplugging the console returns the display to the terminal, plugging it in again brings the picture back.
 
@@ -69,17 +81,17 @@ grep Cma /proc/meminfo                          # CmaTotal: 131072 kB
 journalctl -u sysdvr-lite -n 20 --no-pager      # cedrus / Mali-G31 / GPU conversion enabled
 ```
 
-Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--no-cma`, `--yes` (no confirmation prompt).
+Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--dir PATH` (where to clone when run through curl, default `/opt/sysdvr-lite`), `--no-cma`, `--yes` (no confirmation prompt, required when there is no terminal). Through curl the options go after `bash -s --`, for example `... | sudo bash -s -- --yes --decoder ffmpeg`.
 
 ## Updating
 
-On the board, inside the cloned repository:
+On the board, inside the repository (`/opt/sysdvr-lite` if you installed through curl):
 
 ```bash
-sudo ./update.sh
+sudo /opt/sysdvr-lite/update.sh
 ```
 
-It pulls the latest code, rebuilds, installs the new binary and restarts the service. Packages, the CMA setting and your service options (decoder, audio device) are left untouched. Use `./update.sh --no-pull` to rebuild a local checkout without fetching. It needs the build tools that `install.sh` installed, so do not remove them.
+It pulls the latest code, checks that every package listed in `packages.txt` is still installed (and installs the ones that are missing, for example if you removed them or the new version needs more), rebuilds, installs the new binary and restarts the service. The CMA setting and your service options (decoder, audio device) are left untouched. Use `./update.sh --no-pull` to rebuild a local checkout without fetching.
 
 ## Changing settings
 
@@ -111,7 +123,7 @@ To undo the CMA change, restore the backup that the installer made: `sudo cp /bo
 
 | Symptom | What to check |
 |---|---|
-| `apt` says "Release file is not valid yet" during install | The clock is wrong: `sudo timedatectl set-ntp true`, wait until `timedatectl` shows `System clock synchronized: yes`. |
+| `apt` says "Release file is not valid yet" during install | The clock is wrong. `install.sh` fixes this itself; if you see it from `update.sh`, run `sudo timedatectl set-ntp true`, wait until `timedatectl` shows `System clock synchronized: yes`. |
 | The installer refuses to run | It only supports the Orange Pi Zero 2W with Armbian/Debian. See the message for what was detected. |
 | No picture, nothing in the log about the console | `lsusb` must show `18d1:4ee0` (SysDVR). If not: SysDVR is not in USB mode, wrong cable (it must carry data), or the wrong USB port. |
 | No picture, `journalctl -u sysdvr-lite` shows errors | Missing `/dev/video0` means the Cedrus driver is not loaded (try `--decoder ffmpeg`). "decoder keeps failing" makes the service restart itself, send the log lines before it. |
@@ -168,7 +180,7 @@ The client waits until a console running SysDVR in **USB mode** shows up, and re
 | `--keep-screen` | Do not turn the console screen off while streaming (it is turned off by default). |
 | `--test-file FILE.h264` | Replay an Annex-B file instead of using USB (decoder testing). |
 
-Environment variables for debugging: `SYSDVR_NOGL=1` disables the GPU output path, `SYSDVR_DUMP=file` saves the scanout buffer as raw XRGB, `SYSDVR_LATENCY=1` prints pipeline latency, `SYSDVR_SYNC=1` prints the audio/video skew, `SYSDVR_H264_INFO=1` prints stream properties, `SYSDVR_PROF=1` prints timing of the CPU conversion path.
+Environment variables for debugging: `SYSDVR_NOGL=1` disables the GPU output path, `SYSDVR_DUMP=file` saves the 60th frame of the scanout buffer as raw XRGB (turn it into a PNG screenshot with `tools/xrgb2png.py`), `SYSDVR_LATENCY=1` prints pipeline latency, `SYSDVR_SYNC=1` prints the audio/video skew, `SYSDVR_H264_INFO=1` prints stream properties, `SYSDVR_PROF=1` prints timing of the CPU conversion path.
 
 ### Autostart (systemd)
 
@@ -214,10 +226,12 @@ src/decoder_*.c      null / ffmpeg / native V4L2 (Cedrus) decoders
 src/h264_parse.*     SPS, PPS and slice header parser for the V4L2 decoder
 src/sink_*.c         null, file and DRM/KMS (+EGL) outputs
 src/audio_alsa.c     ALSA playback
-install.sh           one-shot installer for the Orange Pi Zero 2W (Armbian)
-update.sh            pull, rebuild and restart the service
+install.sh           one-shot installer for the Orange Pi Zero 2W (Armbian), also runs through curl
+update.sh            pull, install missing packages, rebuild and restart the service
+packages.txt         the apt packages both scripts use
 tools/               stream generator, reference decoder, comparison script, board probe, service file
 docs/DESIGN.md       architecture and hardware notes
+README.ru.md         this file in Russian
 ```
 
 ## Credits and license

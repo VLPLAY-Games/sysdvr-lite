@@ -1,0 +1,20 @@
+# Packages needed to fetch, build and run sysdvr-lite (Debian / Armbian).
+# Read by install.sh and update.sh, one package per line.
+git
+ca-certificates
+build-essential
+cmake
+ninja-build
+pkg-config
+v4l-utils
+alsa-utils
+libusb-1.0-0-dev
+libavcodec-dev
+libavutil-dev
+libasound2-dev
+libdrm-dev
+libgbm-dev
+libegl-dev
+libgles-dev
+libgl1-mesa-dri
+libegl-mesa0
