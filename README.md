@@ -246,3 +246,5 @@ README.ru.md         this file in Russian
 ## Credits and license
 
 The protocol was implemented from the [SysDVR](https://github.com/exelix11/SysDVR) documentation and by observing its behaviour. SysDVR is by exelix11 and is licensed under the GPL-2.0, which is also the license of this repository (see `LICENSE`). This project is not affiliated with Nintendo or with the SysDVR project.
+
+The 3D-printable dock in `hardware/` is licensed differently: its two stand parts are a remix of [Working Nintendo Switch Lite Charging Dock](https://www.printables.com/model/555711-working-nintendo-switch-lite-charging-dock) by [MM_Printing](https://www.printables.com/@MM_Printing) and stay under CC BY-NC 4.0 (non-commercial use, credit the author). Details in [hardware/README.md](hardware/README.md#license-and-credits).

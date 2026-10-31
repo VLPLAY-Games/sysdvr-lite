@@ -23,7 +23,7 @@ Adventurer 5M (PLA, 0.4 mm): block + lid 1 h 24 min and 53 g, stand parts 2 h 55
 
 ## How it is built
 
-- **Stand (honeycomb).** Made from your two stand parts by `make_stand_mesh.py`: hexagonal through-holes in both plates (front: R 7 mm, 2.6 mm ribs, logo area solid; back: R 11 mm, 3.6 mm ribs) and the bottom ledge halved from 24 to 12 mm, cut where the cross-section of both parts is constant (y -40.5 .. -28.5), so it is seamless. The originals are not modified.
+- **Stand (honeycomb).** Made from the two stand parts of the original model (see [License and credits](#license-and-credits)) by `make_stand_mesh.py`: hexagonal through-holes in both plates (front: R 7 mm, 2.6 mm ribs, logo area solid; back: R 11 mm, 3.6 mm ribs) and the bottom ledge halved from 24 to 12 mm, cut where the cross-section of both parts is constant (y -40.5 .. -28.5), so it is seamless. The originals are not modified.
 - **Board block.** 139.7 x 58 x 15.2 mm (+2.4 mm lid). The board lies at the front **upside down**: the 14 x 14 x 6 mm heatsink and the connectors face the lid, its ports face the rear. Behind the ports there is a 20 mm corridor for the plugs. The short Switch cable comes down from the console through a slot in the roof and goes straight into the USB-C data port (an angled plug is best). HDMI and power plugs sit in the corridor, their cables leave through the rear window.
 - **Board fixing.** Four M2.5 x 6 (or 8) screws into 7 mm bosses on the lid, inserted from the flat back of the board (the heads fit in the 3.5 mm under the roof). Air slots in the lid under the heatsink.
 - **microSD.** The cavity is 6 mm wider at the card end (the inserted card sticks out of the board) and there is a window to the outside along almost the whole short edge.
@@ -53,7 +53,12 @@ Renders (made with the local scripts): `preview/assembly_front.png`, `preview/as
 The scripts that generate the files (`make_stand_mesh.py`, `make_stand_block.py`, `make_3mf.py`, `preview.py`,
 `diagram.py`, `render.py`) are kept locally and are excluded from the repository by `.gitignore`. In short:
 `make_stand_mesh.py` makes the honeycomb stand parts from `switch-lite-dock-front.3mf` (the third-party stand model,
-which also stays outside of the repository, check its license before publishing anything made from it),
+which also stays outside of the repository, see [License and credits](#license-and-credits)),
 `make_stand_block.py` makes the block, the lid and the legs (parameters for the board, screws, legs, microSD and lid
 are at its top), `make_3mf.py` packs the parts into two 3MF print jobs. They need
 `pip install manifold3d trimesh numpy pillow`.
+
+## License and credits
+
+- **Stand parts** (`stand_front_mesh.stl`, `stand_back_with_legs.stl`) are a remix of [Working Nintendo Switch Lite Charging Dock](https://www.printables.com/model/555711-working-nintendo-switch-lite-charging-dock) by [MM_Printing](https://www.printables.com/@MM_Printing), licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Changes: hexagonal through-holes in both plates, the bottom ledge shortened from 24 to 12 mm, four legs added to the back piece. These two files stay under CC BY-NC 4.0: credit the original author and use them for non-commercial purposes only. They are **not** covered by the GPL-2.0 of the rest of the repository.
+- **Board block and lid** (`board_block.stl`, `board_lid.stl`) are original work and fall under the license of this repository (GPL-2.0).
