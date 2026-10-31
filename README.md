@@ -43,6 +43,15 @@ Not verified: other Allwinner boards (H616 variants should work but are untested
 - An HDMI display (a TV or monitor with a 1280x720 mode).
 - Internet access on the board for the installation. The system clock does not need to be set up by hand: the board has no battery-backed clock, and `install.sh` turns on network time itself if the clock is not synchronized (otherwise `apt` fails with "Release file is not valid yet").
 
+## First boot of a fresh Armbian image
+
+Skip this if your board already runs Armbian and is online.
+
+1. Boot the board from the freshly written card and log in as `root` (on the console or over SSH). The first login asks you to set a password for `root`.
+2. If it then offers to create a new user, you can press `Ctrl+C` to skip it and keep working as `root`.
+3. Connect the board to the network: run `armbian-config`, then choose **Network**, then **BNS001 (Basic network setup)**. Pick **Wi-Fi** (the Orange Pi Zero 2W has no Ethernet port, so Wi-Fi is the usual case) or a wired connection, select your network, enter its password and confirm with **OK** wherever it asks. The menu names can differ a little between Armbian versions.
+4. Check that you are online, for example `ping -c 3 github.com`, then continue with the install below.
+
 ## Quick install (Orange Pi Zero 2W only)
 
 > **The install script supports only the Orange Pi Zero 2W running Armbian (Debian based).** It refuses to run on any other board or distribution. The client itself only builds for arm64 Linux.
