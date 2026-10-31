@@ -43,7 +43,7 @@ Renders (made with the local scripts): `preview/assembly_front.png`, `preview/as
 ## Check before relying on it (unverified)
 
 - **Board holes.** The pattern of the Raspberry Pi Zero is assumed: 58 x 23 mm, 3.5 mm from the edges (`HOLE_DX`, `HOLE_DZ` in `make_stand_block.py`). The Orange Pi documentation gives 3.0 mm holes, a Pi Zero has 2.75 mm, both pass an M2.5 screw. Measure the distance between your holes, or print only the lid (20 minutes) and test the board on it.
-- **Connectors and microSD.** `PORT_X` (illustrative x positions of mini HDMI and the two USB-C ports) and `SD_LEFT` must match your board. The Switch cable goes into the **data** port, not the power port. The roof slot follows `PORT_X['data']`.
+- **Connectors and microSD.** `PORT_X` (illustrative x positions of mini HDMI and the two USB-C ports) and `SD_LEFT` must match your board. The Switch cable goes into the **data** port, not the power port. The roof slot follows `PORT_X['data']` and is 15 mm wider on the right side (`SLOT_EXTRA_R`) for the plug.
 - **Plug.** The shorter ledge removed the groove for the plug, only the through-hole remains. An angled plug fits best, a straight plug needs about 25 mm below the console. `LEDGE_CUT = None` in `make_stand_mesh.py` brings the full ledge back.
 - **Stability (paper estimate).** About 120 mm tall, 58 mm deep, the rear face is flush with the back piece: it tips over backwards from a push of about 0.9 N (90 g at the top). A lid with wings (the scripts can make one) gives about 2 N. Rubber feet help.
 - **Stand pieces.** How your two stand parts mate is not in the 3MF, the block does not join them.
