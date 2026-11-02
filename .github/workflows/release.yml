@@ -1,10 +1,10 @@
 name: Release binary
 
-# Builds sysdvr-lite on Debian 13 (the system of the Armbian image) and attaches the binary to the release
-# of a tag, so that install.sh --binary does not have to compile anything on the board.
+# Builds sysdvr-lite on Debian 13 (the system of the Armbian image) and attaches the binary to a release when it is
+# published, so that install.sh --binary does not have to compile anything on the board.
 on:
-  push:
-    tags: ['v*']
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:

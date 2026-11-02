@@ -1,14 +1,15 @@
 name: Switch module
 
 # Builds the patched SysDVR sysmodule of this project (USB only, the console screen comes back by itself when the
-# game leaves the screen) with devkitPro, like the upstream SysDVR workflow does. On a tag the two files are attached
-# to the release: exefs.nsp (to replace the file of an installed SysDVR) and SysDVR-USB-screenwatch.zip (for a console
-# that has no SysDVR yet, unzip to the root of the SD card).
+# game leaves the screen) with devkitPro, like the upstream SysDVR workflow does. When a release is published the two
+# files are attached to it: exefs.nsp (to replace the file of an installed SysDVR) and SysDVR-USB-screenwatch.zip (for
+# a console that has no SysDVR yet, unzip to the root of the SD card).
 on:
   push:
     branches: [main]
     paths: ['switch-module/**']
-    tags: ['v*']
+  release:
+    types: [published]
   pull_request:
     paths: ['switch-module/**']
   workflow_dispatch:

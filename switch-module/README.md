@@ -42,7 +42,7 @@ I could build and review this module but I only tested it on one Switch Lite (fi
 ## Building
 `./build.sh` needs devkitA64 and libnx (devkitPro) and python3; it writes `dist/exefs.nsp` and
 `dist/SysDVR-USB-screenwatch.zip`. The workflow in `.github/workflows/switch-module.yml` does the same in the
-`devkitpro/devkita64` container and attaches both files to the release of a tag. (The build ID inside the file depends
+`devkitpro/devkita64` container and attaches both files to a release when it is published. (The build ID inside the file depends
 on the path it was built in, so two builds of the same sources can differ by a few bytes.)
 
 ## License

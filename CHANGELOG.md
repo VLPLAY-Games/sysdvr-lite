@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 ### Client
 - The picture comes back by itself after the TV is switched off and on or the HDMI cable is replugged; a different display after a replug restarts the client (systemd brings it back). When no display is connected at start the client waits for one instead of exiting every two seconds.
@@ -12,7 +12,7 @@
 - The client ends the stream (USB reset) when the display is gone for two seconds and waits for a display before streaming, so the console screen is not left off with nobody watching.
 
 ### Switch module
-- `switch-module/`: the SysDVR sysmodule (USB only, upstream 6.3) with one added feature: the console screen comes back by itself after 2.5 seconds without video (HOME menu, a controller prompt) and goes dark again when the video is back, instead of staying off until the game returns. `switch-module/build.sh` and the `Switch module` workflow build `exefs.nsp` (to replace the file of an installed SysDVR) and `SysDVR-USB-screenwatch.zip` (everything for a console that has no SysDVR yet, unzip to the SD card); the workflow attaches both to the release of a tag.
+- `switch-module/`: the SysDVR sysmodule (USB only, upstream 6.3) with one added feature: the console screen comes back by itself after 2.5 seconds without video (HOME menu, a controller prompt) and goes dark again when the video is back, instead of staying off until the game returns. `switch-module/build.sh` and the `Switch module` workflow build `exefs.nsp` (to replace the file of an installed SysDVR) and `SysDVR-USB-screenwatch.zip` (everything for a console that has no SysDVR yet, unzip to the SD card); the workflow attaches both to a release when it is published.
 
 ### Installation and service
 - Service options live in `/etc/default/sysdvr-lite`; `update.sh` moves the options of an old unit there. The service unit is hardened (`systemd-analyze security`: 9.4 UNSAFE to 5.6 MEDIUM) and `update.sh` keeps the unit in step with the repository.
