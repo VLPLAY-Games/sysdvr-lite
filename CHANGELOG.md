@@ -16,7 +16,10 @@
 
 ### Installation and service
 - Service options live in `/etc/default/sysdvr-lite`; `update.sh` moves the options of an old unit there. The service unit is hardened (`systemd-analyze security`: 9.4 UNSAFE to 5.6 MEDIUM) and `update.sh` keeps the unit in step with the repository.
-- `install.sh --binary` and `update.sh` install a prebuilt Debian 13 arm64 binary from the latest release (built by a release workflow on tags), without a compiler or development packages. `--force` lets other arm64 Debian based systems try the installer.
+- `install.sh --binary` and `update.sh` install a prebuilt Debian 13 arm64 binary from the latest release (built by a release workflow when a release is published), without a compiler or development packages. `--force` lets other arm64 Debian based systems try the installer.
+
+### Known issues
+- At the first connection the console screen may blink on for a moment and only then turn off. It does not affect the stream. Not fixed yet, planned for 1.2.0.
 
 ## 1.0.0
 

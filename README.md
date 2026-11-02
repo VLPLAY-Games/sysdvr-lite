@@ -158,6 +158,10 @@ To undo the CMA change, restore the backup that the installer made: `sudo cp /bo
 
 Still stuck? Run `sudo ./tools/doctor.sh > doctor.txt` on the board (it only reads, and leaves out the host name and addresses) and attach the file to a [GitHub issue](https://github.com/VLPLAY-Games/sysdvr-lite/issues/new/choose). Reports of how it runs on other TVs, monitors and boards are welcome too.
 
+## Known issues
+
+- At the first connection the console screen may blink on for a moment and only then turn off. It does not affect the stream. Not fixed yet, planned for 1.2.0.
+
 ## Manual build
 
 Requirements: a C11 compiler, CMake, pkg-config. All libraries are optional and enable the matching feature when found.
