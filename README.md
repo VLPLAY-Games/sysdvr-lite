@@ -142,6 +142,8 @@ To undo the CMA change, restore the backup that the installer made: `sudo cp /bo
 | Black screen with the console unplugged | That is the terminal; log in on the display or over SSH. The picture returns on its own when the console is plugged in. |
 | High CPU | The log should say `GPU conversion enabled`. If it falls back to CPU conversion, install the GPU packages (see Manual build). |
 
+Still stuck? Run `sudo ./tools/doctor.sh > doctor.txt` on the board (it only reads, and leaves out the host name and addresses) and attach the file to a [GitHub issue](https://github.com/VLPLAY-Games/sysdvr-lite/issues/new/choose). Reports of how it runs on other TVs, monitors and boards are welcome too.
+
 ## Manual build
 
 Requirements: a C11 compiler, CMake, pkg-config. All libraries are optional and enable the matching feature when found.
@@ -188,6 +190,7 @@ The client waits until a console running SysDVR in **USB mode** shows up, and re
 | `--av-offset MS` | Shift audio relative to video (positive = audio later). |
 | `--keep-screen` | Do not turn the console screen off while streaming (it is turned off by default). |
 | `--test-file FILE.h264` | Replay an Annex-B file instead of using USB (decoder testing). |
+| `--version` | Print the version and the features this build has (ffmpeg, drm, gpu, alsa, v4l2). |
 
 Environment variables for debugging: `SYSDVR_NOGL=1` disables the GPU output path, `SYSDVR_DUMP=file` saves the 60th frame of the scanout buffer as raw XRGB (turn it into a PNG screenshot with `tools/xrgb2png.py`), `SYSDVR_LATENCY=1` prints pipeline latency, `SYSDVR_SYNC=1` prints the audio/video skew, `SYSDVR_H264_INFO=1` prints stream properties, `SYSDVR_PROF=1` prints timing of the CPU conversion path.
 
@@ -238,7 +241,9 @@ src/audio_alsa.c     ALSA playback
 install.sh           one-shot installer for the Orange Pi Zero 2W (Armbian), also runs through curl
 update.sh            pull, install missing packages, rebuild and restart the service
 packages.txt         the apt packages both scripts use
-tools/               stream generator, reference decoder, comparison script, board probe, service file
+tools/               stream generator, reference decoder, comparison script, board probe, doctor.sh, service file
+CHANGELOG.md         release notes
+.github/             CI workflow and issue templates
 docs/DESIGN.md       architecture and hardware notes
 README.ru.md         this file in Russian
 ```

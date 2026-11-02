@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    name: Shell and Python scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -x -S warning install.sh update.sh tools/*.sh
+      - name: bash syntax
+        run: for f in install.sh update.sh tools/*.sh; do bash -n "$f"; done
+      - name: python syntax
+        run: python3 -m py_compile tools/*.py
+
+  build:
+    name: Build and decoder test (arm64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the packages from packages.txt
+        run: |
+          sudo apt-get update
+          grep -vE '^[[:space:]]*(#|$)' packages.txt | xargs sudo apt-get install -y --no-install-recommends
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Version and features
+        run: |
+          ./build/sysdvr-lite --version | tee version.txt
+          for f in ffmpeg drm gpu alsa v4l2; do grep -q "features:.* $f" version.txt || { echo "feature missing: $f"; exit 1; }; done
+
+      - name: Replay a test stream and compare with the reference decoder
+        run: |
+          # 720p30 stream, one slice per frame: the same shape as the console's stream
+          ./build/gen-h264 test.h264 1
+          ./build/ref-decode test.h264 ref.yuv
+          # the replay runs in real time and loops, so stop it after a few seconds
+          timeout 6 ./build/sysdvr-lite --decoder ffmpeg --test-file test.h264 --out out.yuv || [ $? -eq 124 ]
+          FRAME=$((1280 * 720 * 3 / 2))
+          N=$(( $(stat -c %s out.yuv) / FRAME - 1 ))
+          echo "comparing the first $N frames"
+          [ "$N" -ge 60 ] || { echo "too few frames decoded: $N"; exit 1; }
+          cmp -n $((FRAME * N)) ref.yuv out.yuv

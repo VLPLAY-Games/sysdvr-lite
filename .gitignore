@@ -8,3 +8,4 @@ build/
 hardware/*.py
 hardware/__pycache__/
 hardware/*.3mf
+__pycache__/

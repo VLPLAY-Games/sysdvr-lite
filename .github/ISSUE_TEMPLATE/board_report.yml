@@ -1,0 +1,36 @@
+name: Works (or not) on my setup
+description: Tell us how it runs on another board, TV, monitor or Switch model
+labels: [compatibility]
+body:
+  - type: markdown
+    attributes:
+      value: Only the Orange Pi Zero 2W with Armbian is supported by the installer, but reports from other setups are very welcome.
+  - type: input
+    id: board
+    attributes:
+      label: Board and OS
+      placeholder: Orange Pi Zero 2W, Armbian 25.x Debian 13
+    validations:
+      required: true
+  - type: input
+    id: display
+    attributes:
+      label: TV or monitor
+      placeholder: Sony KD-xx, MSI Optix G24
+  - type: input
+    id: console
+    attributes:
+      label: Switch model and SysDVR version
+      placeholder: Switch Lite, SysDVR 6.3
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options: [Works fully, Works with problems, Does not work]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes and tools/doctor.sh output
+      render: text

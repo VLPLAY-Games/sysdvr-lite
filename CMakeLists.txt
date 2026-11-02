@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(sysdvr_lite C)
+project(sysdvr_lite VERSION 1.0.0 LANGUAGES C)
 
 # The client targets the Orange Pi Zero 2W (Allwinner H618): arm64 Linux only.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
@@ -27,6 +27,16 @@ add_executable(sysdvr-lite
   src/decoder_null.c src/decoder_v4l2.c src/h264_parse.c
   src/sink_file.c src/sink_null.c)
 target_link_libraries(sysdvr-lite Threads::Threads PkgConfig::LIBUSB)
+
+# Version: the release number, plus `git describe` when built from a checkout (re-read on every configure)
+set(SYSDVR_GIT "")
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+  execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --always --dirty
+                  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                  OUTPUT_VARIABLE SYSDVR_GIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+endif()
+target_compile_definitions(sysdvr-lite PRIVATE SYSDVR_VERSION="${PROJECT_VERSION}" SYSDVR_GIT="${SYSDVR_GIT}")
 if(FFMPEG_FOUND)
   target_sources(sysdvr-lite PRIVATE src/decoder_ffmpeg.c)
   target_link_libraries(sysdvr-lite PkgConfig::FFMPEG)

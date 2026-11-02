@@ -10,4 +10,4 @@ if command -v v4l2-ctl >/dev/null; then
 else echo "v4l2-ctl missing (apt install v4l-utils)"; fi
 echo "== ffmpeg"; command -v ffmpeg && ffmpeg -hide_banner -decoders 2>/dev/null | grep -i -E "h264|v4l2"; ffmpeg -hide_banner -hwaccels 2>/dev/null
 echo "== cpu"; lscpu | head -12; cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null
-echo "== display"; for c in /sys/class/drm/card*-*; do echo "$c: $(cat $c/status 2>/dev/null)"; done
+echo "== display"; for c in /sys/class/drm/card*-*; do echo "$c: $(cat "$c"/status 2>/dev/null)"; done

@@ -174,6 +174,25 @@ static void on_frame(void *ctx, const frame *f)
     }
 }
 
+static void print_version(void)
+{
+    printf("sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
+    printf("features:"
+#ifdef HAVE_FFMPEG
+           " ffmpeg"
+#endif
+#ifdef HAVE_DRM
+           " drm"
+#endif
+#ifdef HAVE_GL
+           " gpu"
+#endif
+#ifdef HAVE_ALSA
+           " alsa"
+#endif
+           " v4l2\n");
+}
+
 static void usage(const char *a)
 {
     fprintf(stderr,
@@ -189,7 +208,8 @@ static void usage(const char *a)
         "  --audio-batching 0..3        audio packets the console sends at once (default 1, measured best A/V skew)\n"
         "  --av-offset MS               shift audio relative to video (positive = audio later)\n"
         "  --keep-screen                do not turn the console screen off while streaming\n"
-        "  --test-file FILE.h264        replay an Annex-B file instead of using USB (decoder testing)\n", a);
+        "  --test-file FILE.h264        replay an Annex-B file instead of using USB (decoder testing)\n"
+        "  --version                    print the version and the features this build has\n", a);
 }
 
 int main(int argc, char **argv)
@@ -203,7 +223,7 @@ int main(int argc, char **argv)
         {"usb", 0, 0, 'u'}, {"decoder", 1, 0, 'd'}, {"ffmpeg-name", 1, 0, 'f'},
         {"threads", 1, 0, 'T'}, {"video-device", 1, 0, 'V'}, {"out", 1, 0, 'o'}, {"no-audio", 0, 0, 'A'},
         {"no-video", 0, 0, 'N'}, {"drm", 2, 0, 'D'}, {"audio-device", 1, 0, 'a'}, {"screen-off", 0, 0, 's'}, {"keep-screen", 0, 0, 'K'},
-        {"av-offset", 1, 0, 'O'}, {"audio-batching", 1, 0, 'B'}, {"test-file", 1, 0, 'F'}, {0}
+        {"av-offset", 1, 0, 'O'}, {"audio-batching", 1, 0, 'B'}, {"test-file", 1, 0, 'F'}, {"version", 0, 0, 'v'}, {0}
     };
     int c;
     while ((c = getopt_long(argc, argv, "", opts, NULL)) != -1) {
@@ -223,10 +243,12 @@ int main(int argc, char **argv)
         case 'O': g_av_offset_us = atoi(optarg) * 1000; break;
         case 'B': g_audio_batching = atoi(optarg); if (g_audio_batching < 0 || g_audio_batching > 3) g_audio_batching = 1; break;
         case 'F': testfile = optarg; no_audio = 1; break;
+        case 'v': print_version(); return 0;
         default: usage(argv[0]); return 2;
         }
     }
     g_lat = getenv("SYSDVR_LATENCY") != NULL;
+    fprintf(stderr, "sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
 
     stream_opts so = { !no_video, !no_audio, g_audio_batching, screen_off, &g_stop };

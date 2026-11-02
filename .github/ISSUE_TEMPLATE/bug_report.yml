@@ -1,0 +1,29 @@
+name: Bug report
+description: Something does not work (no picture, no sound, crashes, install problems)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please run `sudo ./tools/doctor.sh > doctor.txt` on the board and attach the file below.
+        It collects the board, system, USB, decoder, display, audio and the service log. It leaves out the host name and addresses.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect and what do you see instead? When did it start (right after install, after an update, after unplugging)?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How you installed (curl command or git clone), which console and SysDVR version, which TV or monitor.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of tools/doctor.sh
+      description: Paste it here or attach doctor.txt.
+      render: text
+    validations:
+      required: true
