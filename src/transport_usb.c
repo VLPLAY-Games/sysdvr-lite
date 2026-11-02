@@ -80,7 +80,7 @@ static int usb_next(transport *t, pkt_header *h, uint8_t *payload)
     usb_ctx *u = t->priv; int got = 0;
     while (!*u->opts.stop) {
         int r = libusb_bulk_transfer(u->h, u->ep_in, u->buf, PKT_MAX_TRANSFER, &got, 800);
-        if (r == LIBUSB_ERROR_TIMEOUT) continue;
+        if (r == LIBUSB_ERROR_TIMEOUT) return 2;             /* the caller has things to check from time to time */
         if (r || got < PKT_HDR_SIZE || pkt_parse_header(u->buf, h) || (int)h->size > got - PKT_HDR_SIZE)
             return 1;
         memcpy(payload, u->buf + PKT_HDR_SIZE, h->size);
@@ -93,6 +93,13 @@ static void usb_close(transport *t)
 {
     usb_ctx *u = t->priv;
     if (u->h) libusb_close(u->h);
+    u->h = NULL;
+}
+
+static void usb_end(transport *t)
+{
+    usb_ctx *u = t->priv;
+    if (u->h) { libusb_reset_device(u->h); libusb_close(u->h); }     /* the console sees the reset and stops streaming */
     u->h = NULL;
 }
 
@@ -109,7 +116,7 @@ transport *transport_usb_new(const stream_opts *o)
         u->hotplug = 1;
     u->buf = malloc(PKT_MAX_TRANSFER);
     transport *t = calloc(1, sizeof *t);
-    t->priv = u; t->open = usb_open; t->next_packet = usb_next; t->close = usb_close; t->destroy = usb_destroy;
+    t->priv = u; t->open = usb_open; t->next_packet = usb_next; t->close = usb_close; t->end = usb_end; t->destroy = usb_destroy;
     return t;
 }
 

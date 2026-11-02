@@ -14,6 +14,8 @@
 #   --audio-device ALSA_DEVICE   default plughw:CARD=HDMI,DEV=0
 #   --decoder v4l2|ffmpeg        default v4l2 (hardware)
 #   --dir PATH                   where the repository is cloned when run through curl (default /opt/sysdvr-lite)
+#   --stock-sysdvr               the console has the stock SysDVR, not the patched sysmodule of this project: no
+#                                message window when the game leaves the console screen, as in version 1.0
 #   --no-cma                     do not touch the CMA setting
 #   --binary                     install the prebuilt binary of the latest release instead of building it (Debian 13)
 #   --force                      try another arm64 board or distro (Debian based): skips the Orange Pi Zero 2W check
@@ -31,6 +33,7 @@ ASSUME_YES=0
 FORCE=0
 BINARY=0                  # prebuilt binary instead of a build on the board
 BINARY_SRC=""             # (testing) archive or URL to take it from instead of the latest release
+NOTICE_OPT=""             # " --no-notice" for the options file
 OPTS_GIVEN=0              # --audio-device or --decoder was passed: write the options file even if there is one
 PREFIX=/usr/local
 OPTS_FILE=/etc/default/sysdvr-lite
@@ -42,7 +45,7 @@ APT_OPTS=()
 die()  { echo "error: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
 usage() {
-    if [ -f "${BASH_SOURCE[0]:-}" ]; then sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    if [ -f "${BASH_SOURCE[0]:-}" ]; then sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     else echo "see the header of install.sh or the README: $REPO_URL"; fi
 }
 
@@ -50,6 +53,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --audio-device) AUDIO_DEVICE="${2:?missing value}"; OPTS_GIVEN=1; shift 2 ;;
         --decoder)      DECODER="${2:?missing value}"; OPTS_GIVEN=1; shift 2 ;;
+        --stock-sysdvr) NOTICE_OPT=" --no-notice"; OPTS_GIVEN=1; shift ;;
         --dir)          INSTALL_DIR="${2:?missing value}"; shift 2 ;;
         --no-cma)       SET_CMA=0; shift ;;
         --force)        FORCE=1; shift ;;
@@ -204,7 +208,7 @@ if [ "$OPTS_GIVEN" -eq 1 ] || [ ! -f "$OPTS_FILE" ]; then
     cat > "$OPTS_FILE" <<OPTS
 # Options of the sysdvr-lite service (all options: sysdvr-lite --help).
 # After editing: sudo systemctl restart sysdvr-lite
-SYSDVR_OPTS="--decoder $DECODER --drm --audio-device $AUDIO_DEVICE"
+SYSDVR_OPTS="--decoder $DECODER --drm --audio-device $AUDIO_DEVICE$NOTICE_OPT"
 OPTS
 else
     echo "keeping the options in $OPTS_FILE"

@@ -2,6 +2,14 @@
 #define SINK_H
 #include "decoder.h"
 
+/* A message for the display when there is no picture (UTF-8, the font has ASCII and Cyrillic). The sink draws
+ * several of them one under another: the first is the main one, the others are smaller and dimmer. */
+typedef struct {
+    const char *title;
+    const char *lines[6];          /* body, NULL ends the list */
+    const char *footer;
+} notice_text;
+
 typedef struct sink sink;
 struct sink {
     void (*show)(sink *s, const frame *f);
@@ -9,6 +17,11 @@ struct sink {
      * last frame does not stay frozen on screen; resume takes it again. Both may be NULL. */
     void (*idle)(sink *s);
     void (*resume)(sink *s);
+    /* Optional: 1 while there is a display to show the picture on. When it is gone the client ends the stream, so
+     * the console wakes up instead of streaming to nobody with its screen off. */
+    int  (*present)(sink *s);
+    /* Optional: draw the messages instead of the picture. The next frame replaces them. */
+    void (*notice)(sink *s, const notice_text *blocks, int count);
     void (*close)(sink *s);
     void *priv;
 };

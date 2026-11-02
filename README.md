@@ -24,6 +24,7 @@ The official client is a .NET application with an ImGui/SDL front end. On an Ora
 - The console screen is turned off while the client is connected and turned back on when it disconnects (the SysDVR sysmodule does this on request of the client, protocol 03). Disable with `--keep-screen`.
 - When the console is unplugged, the display goes back to the terminal (no frozen last frame) and the picture returns when it is plugged in again.
 - Survives hiccups of the display and the sound: if the TV is switched off or the HDMI cable is replugged the picture comes back by itself, the program waits for a display that is not there yet, and the sound output is opened again when it becomes available (for example when the HDMI sound card was not ready at boot).
+- When the console sends no video for three seconds (the game left the screen: HOME menu, a controller prompt, a system window) a message is drawn on the display instead of a frozen picture, in Russian with an English copy under it. With the patched sysmodule from [switch-module](switch-module/README.md) the console screen then lights up by itself (and goes dark again when the game is back); with the stock SysDVR it stays off and the message says to press the console's power button twice (sleep and wake). The picture returns by itself when the game does. `--no-notice` turns the message off.
 - Fits the picture to displays that have no 1280x720 mode (`--scale fit`, the default; `--scale none` centers it 1:1).
 - Low-latency queues: when the decoder falls behind, old packets are dropped and decoding resumes at the next keyframe.
 - arm64 Linux only (the build refuses to configure on anything else).
@@ -92,7 +93,16 @@ grep Cma /proc/meminfo                          # CmaTotal: 131072 kB
 journalctl -u sysdvr-lite -n 20 --no-pager      # cedrus / Mali-G31 / GPU conversion enabled
 ```
 
-Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--dir PATH` (where to clone when run through curl, default `/opt/sysdvr-lite`), `--no-cma`, `--binary` (install the prebuilt binary of the latest release instead of building it: no compiler and no development packages, Debian 13 only; available from release 1.1.0), `--force` (try another arm64 board or Debian based system: not tested by me, please report how it went), `--yes` (no confirmation prompt, required when there is no terminal). Through curl the options go after `bash -s --`, for example `... | sudo bash -s -- --yes --decoder ffmpeg`.
+Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--dir PATH` (where to clone when run through curl, default `/opt/sysdvr-lite`), `--stock-sysdvr` (the console has the stock SysDVR: no message window, as in 1.0), `--no-cma`, `--binary` (install the prebuilt binary of the latest release instead of building it: no compiler and no development packages, Debian 13 only; available from release 1.1.0), `--force` (try another arm64 board or Debian based system: not tested by me, please report how it went), `--yes` (no confirmation prompt, required when there is no terminal). Through curl the options go after `bash -s --`, for example `... | sudo bash -s -- --yes --decoder ffmpeg`.
+
+## Optional: the console screen in pauses (patched sysmodule)
+
+SysDVR turns the console screen off while it streams and turns it back on only when the client disconnects. When the game leaves the screen (HOME menu, a controller prompt, a system window) the console sends nothing, the screen stays off, and you have to press its power button twice to see what it wants. [switch-module](switch-module/README.md) is the SysDVR sysmodule (USB only) with one small addition: the screen comes back by itself after a few seconds without video and goes dark again when the game is back. Each release has two files for it:
+
+- `exefs.nsp`: replace the file of the same name in `SD:/atmosphere/contents/00FF0000A53BB665/` if SysDVR is already installed on the console;
+- `SysDVR-USB-screenwatch.zip`: for a console that has no SysDVR yet, unzip it to the root of the SD card.
+
+It is optional: with the stock SysDVR everything works as before, and `install.sh --stock-sysdvr` installs the client without the message window.
 
 ## Updating
 
@@ -143,6 +153,7 @@ To undo the CMA change, restore the backup that the installer made: `sudo cp /bo
 | Audio and picture out of sync | Try `--av-offset` (milliseconds, positive = audio later) and `SYSDVR_SYNC=1` to see the measured skew. |
 | The console screen stays off after disconnecting | The sysmodule restores it itself a moment after the connection ends. If it does not, lock and unlock the console (power button), or start the client with `--keep-screen` to never turn it off. SysDVR itself marks this feature as experimental. |
 | Black screen with the console unplugged | That is the terminal; log in on the display or over SSH. The picture returns on its own when the console is plugged in. |
+| The picture froze and the display shows "No picture from the console" | The game is not on the console screen (HOME menu, a controller prompt, a system window) and SysDVR sends nothing. Go back to the game and the picture returns. To see the console screen meanwhile press its power button twice (sleep, then wake), start with `--keep-screen` so it is never turned off, or put the patched sysmodule from [switch-module](switch-module/README.md) on the console so that the screen lights up by itself. |
 | High CPU | The log should say `GPU conversion enabled`. If it falls back to CPU conversion, install the GPU packages (see Manual build). |
 
 Still stuck? Run `sudo ./tools/doctor.sh > doctor.txt` on the board (it only reads, and leaves out the host name and addresses) and attach the file to a [GitHub issue](https://github.com/VLPLAY-Games/sysdvr-lite/issues/new/choose). Reports of how it runs on other TVs, monitors and boards are welcome too.
@@ -192,11 +203,12 @@ The client waits until a console running SysDVR in **USB mode** shows up, and re
 | `--audio-batching 0..3` | Audio packets the console collects before sending, default 1. |
 | `--av-offset MS` | Shift audio relative to video (positive = audio later). |
 | `--scale fit\|none` | When the display has no mode of the video's size: fit the picture to it (default) or center it 1:1. |
+| `--no-notice` | Do not draw the message when the console sends no video (for a console with the stock SysDVR, as in version 1.0). |
 | `--keep-screen` | Do not turn the console screen off while streaming (it is turned off by default). |
 | `--test-file FILE.h264` | Replay an Annex-B file instead of using USB (decoder testing). |
 | `--version` | Print the version and the features this build has (ffmpeg, drm, gpu, alsa, v4l2). |
 
-Environment variables for debugging: `SYSDVR_NOGL=1` disables the GPU output path, `SYSDVR_DUMP=file` saves the 60th frame of the scanout buffer as raw XRGB (turn it into a PNG screenshot with `tools/xrgb2png.py`), `SYSDVR_LATENCY=1` prints pipeline latency, `SYSDVR_SYNC=1` prints the audio/video skew, `SYSDVR_H264_INFO=1` prints stream properties, `SYSDVR_PROF=1` prints timing of the CPU conversion path.
+Environment variables for debugging: `SYSDVR_NOGL=1` disables the GPU output path, `SYSDVR_DUMP=file` saves the 60th frame of the scanout buffer as raw XRGB (turn it into a PNG screenshot with `tools/xrgb2png.py`), `SYSDVR_LATENCY=1` prints pipeline latency, `SYSDVR_SYNC=1` prints the audio/video skew, `SYSDVR_H264_INFO=1` prints stream properties, `SYSDVR_PKTSTAT=1` prints once a second how many video and audio packets arrived and what the decoder produced, `SYSDVR_PROF=1` prints timing of the CPU conversion path.
 
 ### Autostart (systemd)
 

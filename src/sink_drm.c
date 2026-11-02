@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "sink.h"
+#include "font.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -438,6 +439,111 @@ static void resume(sink *s)
     pthread_mutex_unlock(&d->lock);
 }
 
+/* ---- messages: CPU drawn into the scanout buffer with the bitmap font ---- */
+
+static uint32_t next_codepoint(const char **p)
+{
+    const unsigned char *s = (const unsigned char *)*p;
+    uint32_t c = *s++;
+    if (c >= 0xF0)      { c = (c & 7) << 18 | (s[0] & 63) << 12 | (s[1] & 63) << 6 | (s[2] & 63); s += 3; }
+    else if (c >= 0xE0) { c = (c & 15) << 12 | (s[0] & 63) << 6 | (s[1] & 63); s += 2; }
+    else if (c >= 0xC0) { c = (c & 31) << 6 | (s[0] & 63); s += 1; }
+    *p = (const char *)s;
+    return c;
+}
+
+static int text_width(const char *s, int scale)
+{
+    int n = 0;
+    while (*s) { next_codepoint(&s); n++; }
+    return n * FONT_CELL_W * scale;
+}
+
+static void draw_text(dbuf *b, int bw, int bh, int x, int y, const char *s, uint32_t color, int scale)
+{
+    while (*s) {
+        const uint16_t *g = font_glyph(next_codepoint(&s));
+        for (int row = 0; row < FONT_CELL_H; row++)
+            for (int col = 0; col < FONT_CELL_W; col++) {
+                if (!(g[row] >> (15 - col) & 1)) continue;
+                for (int dy = 0; dy < scale; dy++) {
+                    int py = y + row * scale + dy;
+                    if (py < 0 || py >= bh) continue;
+                    uint32_t *line = (uint32_t *)(b->map + (size_t)py * b->pitch);
+                    for (int dx = 0; dx < scale; dx++) {
+                        int px = x + col * scale + dx;
+                        if (px >= 0 && px < bw) line[px] = color;
+                    }
+                }
+            }
+        x += FONT_CELL_W * scale;
+    }
+}
+
+static void notice(sink *s, const notice_text *t, int count)
+{
+    drm *d = s->priv;
+    pthread_mutex_lock(&d->lock);
+    if (!d->idle && !d->gone) {
+        dbuf *b = &d->buf[d->back];
+        int W = d->mode.hdisplay, H = d->mode.vdisplay;
+        for (int y = 0; y < H; y++) {
+            uint32_t *line = (uint32_t *)(b->map + (size_t)y * b->pitch);
+            for (int x = 0; x < W; x++) line[x] = 0x001C1C1C;
+        }
+        int sc = H >= 1000 ? 2 : 1;                                  /* body scale; the first block has a bigger title */
+        int lh = (FONT_CELL_H + 6) * sc;
+        int total = 0;
+        for (int k = 0; k < count; k++) {
+            int n = 0; while (n < 6 && t[k].lines[n]) n++;
+            total += FONT_CELL_H * (k ? sc : 2 * sc) + 16 * sc + n * lh + (t[k].footer ? 12 * sc + FONT_CELL_H * sc : 0);
+            if (k + 1 < count) total += 34 * sc;
+        }
+        int y = (H - total) / 2;
+        if (y < 0) y = 0;
+        for (int k = 0; k < count; k++) {
+            int tsc = k ? sc : 2 * sc;
+            uint32_t ct = k ? 0x00B4B4B4 : 0x00FFFFFF, cb = k ? 0x00909090 : 0x00D0D0D0, cf = k ? 0x002A9AB8 : 0x0032C8FF;
+            draw_text(b, W, H, (W - text_width(t[k].title, tsc)) / 2, y, t[k].title, ct, tsc);
+            y += FONT_CELL_H * tsc + 16 * sc;
+            for (int i = 0; i < 6 && t[k].lines[i]; i++, y += lh)
+                draw_text(b, W, H, (W - text_width(t[k].lines[i], sc)) / 2, y, t[k].lines[i], cb, sc);
+            if (t[k].footer) {
+                y += 12 * sc;
+                draw_text(b, W, H, (W - text_width(t[k].footer, sc)) / 2, y, t[k].footer, cf, sc);
+                y += FONT_CELL_H * sc;
+            }
+            y += 34 * sc;
+        }
+        const char *dump = getenv("SYSDVR_DUMP");
+        if (dump) {                                                  /* debugging aid, like the dump of the 60th frame */
+            char path[512]; snprintf(path, sizeof path, "%s.notice", dump);
+            FILE *fp = fopen(path, "wb");
+            if (fp) { for (int yy = 0; yy < H; yy++) fwrite(b->map + (size_t)yy * b->pitch, 4, W, fp); fclose(fp); }
+        }
+        if (d->first) { drmModeSetCrtc(d->fd, d->crtc, b->fb, 0, 0, &d->conn, 1, &d->mode); d->first = 0; }
+        else {
+            wait_flip(d);
+            d->inflight_recv = 0;
+            if (!drmModePageFlip(d->fd, d->crtc, b->fb, DRM_MODE_PAGE_FLIP_EVENT, d)) d->flip_pending = 1;
+        }
+        d->back ^= 1;
+    }
+    pthread_mutex_unlock(&d->lock);
+}
+
+/* Reader thread: is a display connected right now? */
+static int present(sink *s)
+{
+    drm *d = s->priv;
+    pthread_mutex_lock(&d->lock);
+    drmModeConnector *c = drmModeGetConnectorCurrent(d->fd, d->conn);
+    int ok = c && c->connection == DRM_MODE_CONNECTED;
+    drmModeFreeConnector(c);
+    pthread_mutex_unlock(&d->lock);
+    return ok;
+}
+
 static void cls(sink *s)
 {
     drm *d = s->priv;
@@ -471,6 +577,6 @@ sink *sink_drm_new(const char *dev, int vw, int vh, int scale)
     d->first = 1;
     pthread_mutex_init(&d->lock, NULL);
     sink *s = calloc(1, sizeof *s);
-    s->priv = d; s->show = show; s->idle = idle; s->resume = resume; s->close = cls;
+    s->priv = d; s->show = show; s->idle = idle; s->resume = resume; s->present = present; s->notice = notice; s->close = cls;
     return s;
 }
