@@ -159,6 +159,10 @@ To undo the CMA change, restore the backup that the installer made: `sudo cp /bo
 
 Still stuck? Run `sudo ./tools/doctor.sh > doctor.txt` on the board (it only reads, and leaves out the host name and addresses) and attach the file to a [GitHub issue](https://github.com/VLPLAY-Games/sysdvr-lite/issues/new/choose). Reports of how it runs on other TVs, monitors and boards are welcome too.
 
+## Tips
+
+- **Stream at 30 frames per second.** SysDVR sends at most 30 frames per second, even when the game runs at 60. If you already use a frame rate limiter on the console (for example FPSLocker), setting 30 for the games you stream saves battery and heat and makes the motion in the stream more even, because no frames are thrown away. It is up to you: not every game supports a limiter, and some get a little more input delay at 30.
+
 ## Known issues
 
 - At the first connection the console screen may blink on for a moment and only then turn off. It does not affect the stream. Not fixed yet, planned for 1.2.0.
