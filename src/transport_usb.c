@@ -14,7 +14,14 @@ typedef struct {
     uint8_t ep_in, ep_out;
     stream_opts opts;
     uint8_t *buf;            /* one whole transfer: libusb can't read a packet in pieces */
+    int hotplug;             /* the plug-in event is registered: waiting for the console wakes up as soon as it arrives */
 } usb_ctx;
+
+/* The callback only has to exist: libusb runs it from libusb_handle_events*(), which ends the wait in usb_open() */
+static int LIBUSB_CALL on_arrived(libusb_context *ctx, libusb_device *dev, libusb_hotplug_event ev, void *user)
+{
+    return 0;
+}
 
 static int usb_rd(void *c, uint8_t *dst, size_t n)
 {
@@ -57,12 +64,13 @@ static int usb_open(transport *t)
             libusb_set_auto_detach_kernel_driver(u->h, 1);
             if (libusb_claim_interface(u->h, 0) == 0 && find_endpoints(u) == 0) {
                 hs_io io = { usb_rd, usb_wr, u };
-                if (proto_handshake(&io, STREAM_VIDEO | STREAM_AUDIO, &u->opts) == 0) return 0;
+                if (proto_handshake(&io, STREAM_VIDEO | STREAM_AUDIO, &u->opts) == 0) { fprintf(stderr, "SysDVR console connected\n"); return 0; }
             }
             libusb_close(u->h); u->h = NULL;
         }
         if (tries == 0) fprintf(stderr, "waiting for SysDVR usb device...\n");
-        struct timespec ts = { 1, 0 }; nanosleep(&ts, NULL);
+        if (u->hotplug) { struct timeval tv = { 1, 0 }; libusb_handle_events_timeout(u->ctx, &tv); }   /* returns at once when the console is plugged in */
+        else { struct timespec ts = { 1, 0 }; nanosleep(&ts, NULL); }
     }
     return -1;
 }
@@ -95,6 +103,10 @@ transport *transport_usb_new(const stream_opts *o)
     usb_ctx *u = calloc(1, sizeof *u);
     if (libusb_init(&u->ctx)) { free(u); return NULL; }
     u->opts = *o;
+    if (libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG) &&
+        libusb_hotplug_register_callback(u->ctx, LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED, 0, VID, PID,
+                                         LIBUSB_HOTPLUG_MATCH_ANY, on_arrived, NULL, NULL) == LIBUSB_SUCCESS)
+        u->hotplug = 1;
     u->buf = malloc(PKT_MAX_TRANSFER);
     transport *t = calloc(1, sizeof *t);
     t->priv = u; t->open = usb_open; t->next_packet = usb_next; t->close = usb_close; t->destroy = usb_destroy;

@@ -209,13 +209,14 @@ static void usage(const char *a)
         "  --av-offset MS               shift audio relative to video (positive = audio later)\n"
         "  --keep-screen                do not turn the console screen off while streaming\n"
         "  --test-file FILE.h264        replay an Annex-B file instead of using USB (decoder testing)\n"
+        "  --scale fit|none             when the display has no mode of the video's size: fit the picture (default) or center it 1:1\n"
         "  --version                    print the version and the features this build has\n", a);
 }
 
 int main(int argc, char **argv)
 {
     const char *outfile = NULL, *adev = NULL, *drmdev = NULL, *testfile = NULL;
-    int use_drm = 0, no_audio = 0, no_video = 0;
+    int use_drm = 0, no_audio = 0, no_video = 0, scale = 1;
     int screen_off = 1;       /* turn the console screen off while streaming, the sysmodule restores it on disconnect */
     decoder_opts dopt = { .name = "ffmpeg", .threads = 2 };
 
@@ -223,7 +224,7 @@ int main(int argc, char **argv)
         {"usb", 0, 0, 'u'}, {"decoder", 1, 0, 'd'}, {"ffmpeg-name", 1, 0, 'f'},
         {"threads", 1, 0, 'T'}, {"video-device", 1, 0, 'V'}, {"out", 1, 0, 'o'}, {"no-audio", 0, 0, 'A'},
         {"no-video", 0, 0, 'N'}, {"drm", 2, 0, 'D'}, {"audio-device", 1, 0, 'a'}, {"screen-off", 0, 0, 's'}, {"keep-screen", 0, 0, 'K'},
-        {"av-offset", 1, 0, 'O'}, {"audio-batching", 1, 0, 'B'}, {"test-file", 1, 0, 'F'}, {"version", 0, 0, 'v'}, {0}
+        {"av-offset", 1, 0, 'O'}, {"audio-batching", 1, 0, 'B'}, {"test-file", 1, 0, 'F'}, {"version", 0, 0, 'v'}, {"scale", 1, 0, 'S'}, {0}
     };
     int c;
     while ((c = getopt_long(argc, argv, "", opts, NULL)) != -1) {
@@ -244,9 +245,13 @@ int main(int argc, char **argv)
         case 'B': g_audio_batching = atoi(optarg); if (g_audio_batching < 0 || g_audio_batching > 3) g_audio_batching = 1; break;
         case 'F': testfile = optarg; no_audio = 1; break;
         case 'v': print_version(); return 0;
+        case 'S': scale = strcmp(optarg, "none") != 0; break;
         default: usage(argv[0]); return 2;
         }
     }
+#ifndef HAVE_DRM
+    (void)drmdev; (void)scale;
+#endif
     g_lat = getenv("SYSDVR_LATENCY") != NULL;
     fprintf(stderr, "sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
@@ -259,7 +264,11 @@ int main(int argc, char **argv)
     if (vq) {
         g_sink = outfile ? sink_file_new(outfile) : NULL;
 #ifdef HAVE_DRM
-        if (!g_sink && use_drm) g_sink = sink_drm_new(drmdev, VIDEO_W, VIDEO_H);
+        while (!g_sink && use_drm && !g_stop) {       /* no display yet (the TV is off, still starting): keep waiting */
+            g_sink = sink_drm_new(drmdev, VIDEO_W, VIDEO_H, scale);
+            if (!g_sink) { struct timespec ts = { 2, 0 }; nanosleep(&ts, NULL); }
+        }
+        if (g_stop) return 0;
 #endif
         if (!g_sink && !use_drm && !outfile) g_sink = sink_null_new();
         if (!g_sink) { perror("sink"); return 1; }

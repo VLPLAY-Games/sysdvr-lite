@@ -23,6 +23,8 @@ The official client is a .NET application with an ImGui/SDL front end. On an Ora
 - Audio over ALSA (48 kHz stereo S16) with A/V synchronization: both streams carry console timestamps, the audio follows the picture. Video is never delayed.
 - The console screen is turned off while the client is connected and turned back on when it disconnects (the SysDVR sysmodule does this on request of the client, protocol 03). Disable with `--keep-screen`.
 - When the console is unplugged, the display goes back to the terminal (no frozen last frame) and the picture returns when it is plugged in again.
+- Survives hiccups of the display and the sound: if the TV is switched off or the HDMI cable is replugged the picture comes back by itself, the program waits for a display that is not there yet, and the sound output is opened again when it becomes available (for example when the HDMI sound card was not ready at boot).
+- Fits the picture to displays that have no 1280x720 mode (`--scale fit`, the default; `--scale none` centers it 1:1).
 - Low-latency queues: when the decoder falls behind, old packets are dropped and decoding resumes at the next keyframe.
 - arm64 Linux only (the build refuses to configure on anything else).
 
@@ -90,7 +92,7 @@ grep Cma /proc/meminfo                          # CmaTotal: 131072 kB
 journalctl -u sysdvr-lite -n 20 --no-pager      # cedrus / Mali-G31 / GPU conversion enabled
 ```
 
-Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--dir PATH` (where to clone when run through curl, default `/opt/sysdvr-lite`), `--no-cma`, `--yes` (no confirmation prompt, required when there is no terminal). Through curl the options go after `bash -s --`, for example `... | sudo bash -s -- --yes --decoder ffmpeg`.
+Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--dir PATH` (where to clone when run through curl, default `/opt/sysdvr-lite`), `--no-cma`, `--binary` (install the prebuilt binary of the latest release instead of building it: no compiler and no development packages, Debian 13 only; available from release 1.1.0), `--force` (try another arm64 board or Debian based system: not tested by me, please report how it went), `--yes` (no confirmation prompt, required when there is no terminal). Through curl the options go after `bash -s --`, for example `... | sudo bash -s -- --yes --decoder ffmpeg`.
 
 ## Updating
 
@@ -100,23 +102,24 @@ On the board, inside the repository (`/opt/sysdvr-lite` if you installed through
 sudo /opt/sysdvr-lite/update.sh
 ```
 
-It pulls the latest code, checks that every package listed in `packages.txt` is still installed (and installs the ones that are missing, for example if you removed them or the new version needs more), rebuilds, installs the new binary and restarts the service. The CMA setting and your service options (decoder, audio device) are left untouched. Use `./update.sh --no-pull` to rebuild a local checkout without fetching.
+It pulls the latest code, checks that every package listed in `packages.txt` is still installed (and installs the ones that are missing, for example if you removed them or the new version needs more), rebuilds, installs the new binary and restarts the service. The CMA setting and your service options (decoder, audio device) are left untouched. Use `./update.sh --no-pull` to rebuild a local checkout without fetching. A board installed with `--binary` gets the prebuilt binary of the latest release instead of a build (`./update.sh --build` forces a build from source).
 
 ## Changing settings
 
-The service runs `sysdvr-lite` with the options from its unit file. To change the audio device or decoder, either re-run the installer with the options (it keeps your CMA setting and rewrites the unit, it runs `apt` again so it needs internet access):
+The service reads its options from `/etc/default/sysdvr-lite`, a single line:
 
-```bash
-sudo ./install.sh --yes --audio-device plughw:CARD=Codec,DEV=0 --decoder v4l2
+```
+SYSDVR_OPTS="--decoder v4l2 --drm --audio-device plughw:CARD=HDMI,DEV=0"
 ```
 
-or edit `ExecStart` in `/etc/systemd/system/sysdvr-lite.service` and apply it:
+Edit it (for example change the audio device, the list of devices is in `aplay -L`) and restart the service:
 
 ```bash
-sudo systemctl daemon-reload && sudo systemctl restart sysdvr-lite
+sudo nano /etc/default/sysdvr-lite
+sudo systemctl restart sysdvr-lite
 ```
 
-`update.sh` never touches these options. All command line options are listed in [Usage](#usage).
+Re-running the installer with `--audio-device` or `--decoder` rewrites that file too. `update.sh` never touches it (a board installed before the file existed gets it filled from its old unit at the first update). Do not edit the unit file itself: `update.sh` replaces it with the one from the repository. All command line options are listed in [Usage](#usage).
 
 ## Uninstalling
 
@@ -188,6 +191,7 @@ The client waits until a console running SysDVR in **USB mode** shows up, and re
 | `--audio-device NAME` | ALSA device, e.g. `plughw:CARD=HDMI,DEV=0`. |
 | `--audio-batching 0..3` | Audio packets the console collects before sending, default 1. |
 | `--av-offset MS` | Shift audio relative to video (positive = audio later). |
+| `--scale fit\|none` | When the display has no mode of the video's size: fit the picture to it (default) or center it 1:1. |
 | `--keep-screen` | Do not turn the console screen off while streaming (it is turned off by default). |
 | `--test-file FILE.h264` | Replay an Annex-B file instead of using USB (decoder testing). |
 | `--version` | Print the version and the features this build has (ffmpeg, drm, gpu, alsa, v4l2). |
@@ -205,7 +209,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now sysdvr-lite
 ```
 
-Edit the `ExecStart` line to change decoder or audio device. Logs: `journalctl -u sysdvr-lite -f`.
+To change the decoder or the audio device create `/etc/default/sysdvr-lite` with a `SYSDVR_OPTS="..."` line (see [Changing settings](#changing-settings)). Logs: `journalctl -u sysdvr-lite -f`.
 
 ## Orange Pi Zero 2W notes
 
@@ -241,7 +245,7 @@ src/audio_alsa.c     ALSA playback
 install.sh           one-shot installer for the Orange Pi Zero 2W (Armbian), also runs through curl
 update.sh            pull, install missing packages, rebuild and restart the service
 packages.txt         the apt packages both scripts use
-tools/               stream generator, reference decoder, comparison script, board probe, doctor.sh, service file
+tools/               stream generator, reference decoder, comparison script, board probe, doctor.sh, service file, release packaging
 CHANGELOG.md         release notes
 .github/             CI workflow and issue templates
 docs/DESIGN.md       architecture and hardware notes

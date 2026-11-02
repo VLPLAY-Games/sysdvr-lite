@@ -29,6 +29,7 @@ sec "service"
 echo "active:  $(systemctl is-active sysdvr-lite 2>/dev/null || true)"
 echo "enabled: $(systemctl is-enabled sysdvr-lite 2>/dev/null || true)"
 grep -h '^ExecStart=' /etc/systemd/system/sysdvr-lite.service 2>/dev/null || echo "unit file not found"
+echo "options (/etc/default/sysdvr-lite):"; grep -h '^SYSDVR_OPTS=' /etc/default/sysdvr-lite 2>/dev/null || echo "  not set, the default of the unit is used"
 
 sec "log (last 40 lines)"
 if have journalctl; then

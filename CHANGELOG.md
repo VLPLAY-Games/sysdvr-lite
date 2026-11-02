@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Client
+- The picture comes back by itself after the TV is switched off and on or the HDMI cable is replugged; a different display after a replug restarts the client (systemd brings it back). When no display is connected at start the client waits for one instead of exiting every two seconds.
+- The sound output is opened again when it was not available at start (the HDMI card was not ready) or stops answering. alsa-lib error spam is gone from the log.
+- `--scale fit|none`: when the display has no mode of the video's size, the smallest mode that contains the video is chosen and the picture is fitted to it (it used to be a small centered picture).
+- The console is found at once when plugged in (libusb hot-plug event instead of polling once a second), and the log says `SysDVR console connected`.
+
+### Installation and service
+- Service options live in `/etc/default/sysdvr-lite`; `update.sh` moves the options of an old unit there. The service unit is hardened (`systemd-analyze security`: 9.4 UNSAFE to 5.6 MEDIUM) and `update.sh` keeps the unit in step with the repository.
+- `install.sh --binary` and `update.sh` install a prebuilt Debian 13 arm64 binary from the latest release (built by a release workflow on tags), without a compiler or development packages. `--force` lets other arm64 Debian based systems try the installer.
+
 ## 1.0.0
 
 First stable release: a small C client for [SysDVR](https://github.com/exelix11/SysDVR) that shows a Nintendo Switch on an HDMI display from an Orange Pi Zero 2W, with no PC, X11 or Wayland.

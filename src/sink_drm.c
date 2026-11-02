@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +35,11 @@ typedef struct {
     drmModeCrtc *saved;
     pthread_mutex_t lock;        /* show() runs in the decode thread, idle()/resume() in the reader thread */
     int idle;
+    int vw, vh;                  /* size of the video */
+    int exact;                   /* the mode has the size of the video */
+    int scale;                   /* fit the picture to the display when the sizes differ (GPU path only) */
+    int gone;                    /* the display is switched off or unplugged: nothing is drawn */
+    uint64_t check_ns;           /* last time the connector was looked at */
     dbuf buf[2];
     int back, flip_pending, first;
     uint64_t inflight_recv;      /* arrival time of the frame in the pending flip */
@@ -118,6 +124,98 @@ static void wait_flip(drm *d)
     }
 }
 
+static uint64_t now_ns(void)
+{
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000000000ull + t.tv_nsec;
+}
+
+/* An exact mode wins (highest refresh rate). Without one, the smallest mode that contains the video:
+ * the picture is then shown 1:1 or scaled up as little as possible. SYSDVR_MODE=WxH forces a mode (testing). */
+static int choose_mode(const drmModeConnector *c, int vw, int vh, int *exact)
+{
+    int best = -1;
+    for (int i = 0; i < c->count_modes; i++) {
+        const drmModeModeInfo *m = &c->modes[i];
+        if ((m->flags & DRM_MODE_FLAG_INTERLACE) || m->hdisplay != vw || m->vdisplay != vh) continue;
+        if (best < 0 || m->vrefresh > c->modes[best].vrefresh) best = i;
+    }
+    *exact = best >= 0;
+    const char *forced = getenv("SYSDVR_MODE");
+    int fw, fh;
+    if (forced && sscanf(forced, "%dx%d", &fw, &fh) == 2) {
+        for (int i = 0; i < c->count_modes; i++)
+            if (c->modes[i].hdisplay == fw && c->modes[i].vdisplay == fh && !(c->modes[i].flags & DRM_MODE_FLAG_INTERLACE)) {
+                *exact = fw == vw && fh == vh;
+                return i;
+            }
+    }
+    if (best >= 0) return best;
+    long area = 0;
+    for (int i = 0; i < c->count_modes; i++) {
+        const drmModeModeInfo *m = &c->modes[i];
+        if ((m->flags & DRM_MODE_FLAG_INTERLACE) || m->hdisplay < vw || m->vdisplay < vh) continue;
+        long a = (long)m->hdisplay * m->vdisplay;
+        if (best < 0 || a < area || (a == area && m->vrefresh > c->modes[best].vrefresh)) { best = i; area = a; }
+    }
+    return best >= 0 ? best : 0;                    /* nothing is big enough: the connector's preferred mode */
+}
+
+/* Finds the connected display and the mode to use on it (also used again when the display comes back) */
+static int pick_display(drm *d, int vw, int vh, int quiet)
+{
+    drmModeRes *r = drmModeGetResources(d->fd);
+    drmModeConnector *c = NULL;
+    for (int i = 0; r && i < r->count_connectors; i++) {
+        c = drmModeGetConnector(d->fd, r->connectors[i]);
+        if (c && c->connection == DRM_MODE_CONNECTED && c->count_modes) break;
+        drmModeFreeConnector(c); c = NULL;
+    }
+    if (!c) {
+        if (!quiet) fprintf(stderr, "drm: no connected display, waiting for one\n");
+        drmModeFreeResources(r);
+        return -1;
+    }
+    int exact;
+    d->mode = c->modes[choose_mode(c, vw, vh, &exact)];
+    d->exact = exact;
+    d->conn = c->connector_id;
+    drmModeEncoder *e = c->encoder_id ? drmModeGetEncoder(d->fd, c->encoder_id) : NULL;
+    d->crtc = e ? e->crtc_id : r->crtcs[0];
+    if (e) drmModeFreeEncoder(e);
+    if (!d->saved) d->saved = drmModeGetCrtc(d->fd, d->crtc);        /* the console's own state, put back later */
+    drmModeFreeConnector(c);
+    drmModeFreeResources(r);
+    return 0;
+}
+
+/* The display was switched off, unplugged or replaced while streaming? Looked at twice a second.
+ * Returns 1 when drawing makes sense. Called with the lock held. */
+static int display_ok(drm *d, int vw, int vh)
+{
+    uint64_t t = now_ns();
+    if (t - d->check_ns < 500000000ull) return !d->gone;
+    d->check_ns = t;
+    drmModeConnector *c = drmModeGetConnectorCurrent(d->fd, d->conn);
+    int connected = c && c->connection == DRM_MODE_CONNECTED;
+    drmModeFreeConnector(c);
+    if (!connected) {
+        if (!d->gone) { fprintf(stderr, "drm: the display went away\n"); d->gone = 1; }
+        return 0;
+    }
+    if (!d->gone) return 1;
+    int ow = d->mode.hdisplay, oh = d->mode.vdisplay;
+    if (pick_display(d, vw, vh, 1)) return 0;
+    d->gone = 0;
+    if (d->mode.hdisplay != ow || d->mode.vdisplay != oh) {         /* the buffers have the old size: start over */
+        fprintf(stderr, "drm: a different display (%dx%d -> %dx%d), restarting\n", ow, oh, d->mode.hdisplay, d->mode.vdisplay);
+        raise(SIGTERM);
+        return 0;
+    }
+    fprintf(stderr, "drm: the display is back\n");
+    d->first = 1;                                                    /* set the mode again */
+    return 1;
+}
 
 #ifdef HAVE_GL
 static const char *VS =
@@ -215,8 +313,13 @@ static int gl_draw(drm *d, const frame *f, dbuf *b)
     if (!tex) glGenTextures(1, &tex);
     glBindFramebuffer(GL_FRAMEBUFFER, b->fbo);
     int W = d->mode.hdisplay, H = d->mode.vdisplay;
-    if (f->width != W || f->height != H) { glViewport(0, 0, W, H); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
-    glViewport((W - f->width) / 2, (H - f->height) / 2, f->width, f->height);
+    int pw = f->width, ph = f->height;                      /* size of the picture on screen */
+    if (d->scale && (pw != W || ph != H)) {                 /* no mode of the video's size: fit it, keeping the aspect ratio */
+        if ((long)W * ph <= (long)H * pw) { pw = W; ph = (int)((long)f->height * W / f->width); }
+        else { ph = H; pw = (int)((long)f->width * H / f->height); }
+    }
+    if (pw != W || ph != H) { glViewport(0, 0, W, H); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
+    glViewport((W - pw) / 2, (H - ph) / 2, pw, ph);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_EXTERNAL_OES, tex);
     d->image_target(GL_TEXTURE_EXTERNAL_OES, d->src_img[id]);
@@ -292,7 +395,7 @@ static void show(sink *s, const frame *f)
 {
     drm *d = s->priv;
     pthread_mutex_lock(&d->lock);
-    if (!d->idle) show_locked(s, f);          /* frames still in flight after the stream ended are dropped */
+    if (!d->idle && display_ok(d, d->vw, d->vh)) show_locked(s, f);    /* frames in flight after the stream ended are dropped */
     pthread_mutex_unlock(&d->lock);
 }
 
@@ -322,6 +425,15 @@ static void resume(sink *s)
         drmSetMaster(d->fd);
         d->idle = 0;
         d->first = 1;                         /* next frame sets the video mode again */
+        int ow = d->mode.hdisplay, oh = d->mode.vdisplay;
+        if (pick_display(d, d->vw, d->vh, 1)) d->gone = 1;               /* switched off meanwhile: display_ok() waits for it */
+        else {
+            d->gone = 0;
+            if (d->mode.hdisplay != ow || d->mode.vdisplay != oh) {      /* a different display was plugged in */
+                fprintf(stderr, "drm: a different display (%dx%d -> %dx%d), restarting\n", ow, oh, d->mode.hdisplay, d->mode.vdisplay);
+                raise(SIGTERM);
+            }
+        }
     }
     pthread_mutex_unlock(&d->lock);
 }
@@ -342,35 +454,20 @@ static void cls(sink *s)
     free(d);
 }
 
-sink *sink_drm_new(const char *dev, int vw, int vh)
+sink *sink_drm_new(const char *dev, int vw, int vh, int scale)
 {
+    static int tries;                                   /* called again until a display shows up: complain only once */
+    int quiet = tries++ > 0;
     drm *d = calloc(1, sizeof *d);
     d->fd = open(dev ? dev : "/dev/dri/card0", O_RDWR | O_CLOEXEC);
-    if (d->fd < 0) { perror("drm open"); free(d); return NULL; }
+    if (d->fd < 0) { if (!quiet) perror("drm open"); free(d); return NULL; }
     drmSetMaster(d->fd);
-    drmModeRes *r = drmModeGetResources(d->fd);
-    drmModeConnector *c = NULL;
-    for (int i = 0; r && i < r->count_connectors; i++) {
-        c = drmModeGetConnector(d->fd, r->connectors[i]);
-        if (c && c->connection == DRM_MODE_CONNECTED && c->count_modes) break;
-        drmModeFreeConnector(c); c = NULL;
-    }
-    if (!c) { fprintf(stderr, "drm: no connected display\n"); close(d->fd); free(d); return NULL; }
-    /* prefer an exact match with the video size, highest refresh; else the connector's preferred mode */
-    int best = -1;
-    for (int i = 0; i < c->count_modes; i++) {
-        drmModeModeInfo *m = &c->modes[i];
-        if (m->hdisplay == vw && m->vdisplay == vh && !(m->flags & DRM_MODE_FLAG_INTERLACE) &&
-            (best < 0 || m->vrefresh > c->modes[best].vrefresh)) best = i;
-    }
-    d->mode = c->modes[best >= 0 ? best : 0];
-    d->conn = c->connector_id;
-    drmModeEncoder *e = c->encoder_id ? drmModeGetEncoder(d->fd, c->encoder_id) : NULL;
-    d->crtc = e ? e->crtc_id : r->crtcs[0];
-    d->saved = drmModeGetCrtc(d->fd, d->crtc);
+    d->vw = vw; d->vh = vh; d->scale = scale;
+    if (pick_display(d, vw, vh, quiet)) { close(d->fd); free(d); return NULL; }
     fprintf(stderr, "drm: %s %dx%d@%d%s\n", dev ? dev : "/dev/dri/card0", d->mode.hdisplay, d->mode.vdisplay,
-            d->mode.vrefresh, best >= 0 ? "" : " (no exact mode, video is centered)");
-    if (make_buf(d, &d->buf[0]) || make_buf(d, &d->buf[1])) { fprintf(stderr, "drm: cannot create buffers\n"); return NULL; }
+            d->mode.vrefresh, d->exact ? "" : scale ? " (no mode of the video's size, the picture is scaled to fit)"
+                                                    : " (no mode of the video's size, the picture is centered)");
+    if (make_buf(d, &d->buf[0]) || make_buf(d, &d->buf[1])) { fprintf(stderr, "drm: cannot create buffers\n"); close(d->fd); free(d); return NULL; }
     d->first = 1;
     pthread_mutex_init(&d->lock, NULL);
     sink *s = calloc(1, sizeof *s);

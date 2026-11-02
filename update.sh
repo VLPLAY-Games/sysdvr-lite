@@ -2,19 +2,25 @@
 # Updates sysdvr-lite on a board where install.sh has been run before:
 # pulls the latest code, installs any build package that is missing (for example if you removed it),
 # rebuilds, installs the new binary and restarts the service.
-# It does not touch the CMA setting or your service options (decoder, audio device).
+# It does not touch the CMA setting or your service options (decoder, audio device), which live in
+# /etc/default/sysdvr-lite. A board installed before that file existed gets it filled from its old unit.
 #
-# Usage: sudo ./update.sh [--no-pull]     (--no-pull: rebuild the current checkout only)
+# A board installed with install.sh --binary gets the prebuilt binary of the latest release instead of a build.
+#
+# Usage: sudo ./update.sh [--no-pull] [--build]
+#   --no-pull  rebuild the current checkout only          --build  build from source even if installed with --binary
 set -euo pipefail
 
 PULL=1
+FORCE_BUILD=0
 PREFIX=/usr/local
 UNIT=sysdvr-lite.service
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-pull) PULL=0; shift ;;
-        -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --build)   FORCE_BUILD=1; shift ;;
+        -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -62,7 +68,14 @@ if [ "$PULL" -eq 1 ]; then
     if [ "$OLD" = "$NEW" ]; then echo "already up to date ($NEW)"; else echo "updated $OLD -> $NEW"; fi
 fi
 
+BINARY=0
+[ -f "$HERE/.binary-install" ] && [ "$FORCE_BUILD" -eq 0 ] && BINARY=1
+
 # read after the pull: the new version may need more packages
+if [ "$BINARY" -eq 1 ]; then
+    step "Installing the prebuilt binary"
+    "$HERE/tools/fetch-binary.sh"
+else
 step "Checking the build packages"
 [ -f "$HERE/packages.txt" ] || die "$HERE/packages.txt not found after the pull"
 mapfile -t PACKAGES < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/packages.txt")
@@ -75,6 +88,19 @@ cmake --build "$HERE/build"
 
 step "Installing"
 cmake --install "$HERE/build" --prefix "$PREFIX"
+fi
+OPTS_FILE=/etc/default/sysdvr-lite
+UNIT_DST="/etc/systemd/system/$UNIT"
+if [ ! -f "$OPTS_FILE" ]; then       # installed before the options file existed: keep the options of the old unit
+    OPTS="$(sed -n 's#^ExecStart=[^ ]*sysdvr-lite[[:space:]]*##p' "$UNIT_DST" | head -1)"
+    [ -n "$OPTS" ] || OPTS="--decoder v4l2 --drm --audio-device plughw:CARD=HDMI,DEV=0"
+    printf '# Options of the sysdvr-lite service (all options: sysdvr-lite --help).\n# After editing: sudo systemctl restart sysdvr-lite\nSYSDVR_OPTS="%s"\n' "$OPTS" > "$OPTS_FILE"
+    echo "service options moved to $OPTS_FILE: $OPTS"
+fi
+if ! cmp -s "$HERE/tools/$UNIT" "$UNIT_DST"; then
+    install -m 644 "$HERE/tools/$UNIT" "$UNIT_DST"
+    echo "service unit updated"
+fi
 systemctl daemon-reload
 systemctl restart "$UNIT"
 sleep 2

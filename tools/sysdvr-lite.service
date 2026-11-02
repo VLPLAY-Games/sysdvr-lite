@@ -4,11 +4,35 @@ After=systemd-udevd.service sound.target
 Wants=sound.target
 
 [Service]
-ExecStart=/usr/local/bin/sysdvr-lite --decoder v4l2 --drm --audio-device plughw:CARD=HDMI,DEV=0
+# The options live in /etc/default/sysdvr-lite (SYSDVR_OPTS=...), the line below is the default.
+# After editing that file: sudo systemctl restart sysdvr-lite
+Environment="SYSDVR_OPTS=--decoder v4l2 --drm --audio-device plughw:CARD=HDMI,DEV=0"
+EnvironmentFile=-/etc/default/sysdvr-lite
+# the filesystem is read-only for the service: no shader cache (the shader is tiny), no warning about it
+Environment=MESA_SHADER_CACHE_DISABLE=true
+ExecStart=/usr/local/bin/sysdvr-lite $SYSDVR_OPTS
 Restart=always
 RestartSec=2
 # a real-time-ish feel: keep the decode thread from being starved
 Nice=-5
+
+# The client only talks to its devices (USB, decoder, display, sound). It writes nothing to the system
+# and uses no network, so most of the system is closed to it.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

@@ -16,5 +16,6 @@ struct sink {
 sink *sink_null_new(void);
 sink *sink_file_new(const char *path);
 /* drm: KMS output without X, GPU (or CPU fallback) NV12->XRGB conversion */
-sink *sink_drm_new(const char *dev, int video_w, int video_h);
+/* scale: fit the picture to the display when no mode has the video's size (otherwise it is centered 1:1) */
+sink *sink_drm_new(const char *dev, int video_w, int video_h, int scale);
 #endif

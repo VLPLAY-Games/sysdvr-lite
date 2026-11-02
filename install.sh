@@ -15,6 +15,8 @@
 #   --decoder v4l2|ffmpeg        default v4l2 (hardware)
 #   --dir PATH                   where the repository is cloned when run through curl (default /opt/sysdvr-lite)
 #   --no-cma                     do not touch the CMA setting
+#   --binary                     install the prebuilt binary of the latest release instead of building it (Debian 13)
+#   --force                      try another arm64 board or distro (Debian based): skips the Orange Pi Zero 2W check
 #   --yes, -y                    do not ask for confirmation (required when there is no terminal)
 
 # The whole script is one function: bash must read it completely before running anything, otherwise
@@ -26,7 +28,12 @@ AUDIO_DEVICE="plughw:CARD=HDMI,DEV=0"
 DECODER="v4l2"
 SET_CMA=1
 ASSUME_YES=0
+FORCE=0
+BINARY=0                  # prebuilt binary instead of a build on the board
+BINARY_SRC=""             # (testing) archive or URL to take it from instead of the latest release
+OPTS_GIVEN=0              # --audio-device or --decoder was passed: write the options file even if there is one
 PREFIX=/usr/local
+OPTS_FILE=/etc/default/sysdvr-lite
 REPO_URL="${SYSDVR_REPO:-https://github.com/VLPLAY-Games/sysdvr-lite}"
 INSTALL_DIR=/opt/sysdvr-lite
 ENV_FILE="${SYSDVR_ENV_FILE:-/boot/armbianEnv.txt}"   # override only for testing
@@ -35,16 +42,19 @@ APT_OPTS=()
 die()  { echo "error: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
 usage() {
-    if [ -f "${BASH_SOURCE[0]:-}" ]; then sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    if [ -f "${BASH_SOURCE[0]:-}" ]; then sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     else echo "see the header of install.sh or the README: $REPO_URL"; fi
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --audio-device) AUDIO_DEVICE="${2:?missing value}"; shift 2 ;;
-        --decoder)      DECODER="${2:?missing value}"; shift 2 ;;
+        --audio-device) AUDIO_DEVICE="${2:?missing value}"; OPTS_GIVEN=1; shift 2 ;;
+        --decoder)      DECODER="${2:?missing value}"; OPTS_GIVEN=1; shift 2 ;;
         --dir)          INSTALL_DIR="${2:?missing value}"; shift 2 ;;
         --no-cma)       SET_CMA=0; shift ;;
+        --force)        FORCE=1; shift ;;
+        --binary)       BINARY=1; shift ;;
+        --binary-from)  BINARY=1; BINARY_SRC="${2:?missing value}"; shift 2 ;;
         --yes|-y)       ASSUME_YES=1; shift ;;
         -h|--help)      usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -59,11 +69,15 @@ step "Checking the platform"
 MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
 case "$MODEL" in
     *"Orange Pi Zero 2W"*|*"OrangePi Zero 2W"*|*"Orange Pi Zero2W"*) ;;
-    *) die "this installer only supports the Orange Pi Zero 2W (detected: '${MODEL:-unknown}')" ;;
+    *) if [ "$FORCE" -eq 1 ]; then
+           echo "warning: '${MODEL:-unknown board}' is not the tested Orange Pi Zero 2W, going on because of --force"
+       else
+           die "this installer only supports the Orange Pi Zero 2W (detected: '${MODEL:-unknown}'); other arm64 boards: try --force"
+       fi ;;
 esac
-[ -f /etc/armbian-release ] || [ -f /boot/armbianEnv.txt ] || die "this installer only supports Armbian"
+if [ ! -f /etc/armbian-release ] && [ ! -f /boot/armbianEnv.txt ] && [ "$FORCE" -ne 1 ]; then die "this installer only supports Armbian (other Debian based systems: try --force)"; fi
 . /etc/os-release
-[ "${ID:-}" = debian ] || [ "${ID_LIKE:-}" = debian ] || die "this installer only supports Debian based Armbian images (found ${PRETTY_NAME:-unknown})"
+[ "${ID:-}" = debian ] || [ "${ID_LIKE:-}" = debian ] || die "this installer only supports Debian based systems (found ${PRETTY_NAME:-unknown})"
 [ "$(uname -m)" = aarch64 ] || die "expected an arm64 system"
 echo "Board: $MODEL / ${PRETTY_NAME:-} / kernel $(uname -r)"
 
@@ -132,15 +146,22 @@ echo "Source: $HERE ($(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo
 
 # ---- packages -------------------------------------------------------------------------------
 step "Installing packages"
-[ -f "$HERE/packages.txt" ] || die "$HERE/packages.txt not found: this is not a complete sysdvr-lite checkout"
-mapfile -t PACKAGES < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/packages.txt")
-[ "${#PACKAGES[@]}" -gt 0 ] || die "$HERE/packages.txt lists no packages"
-apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${PACKAGES[@]}"
+if [ "$BINARY" -eq 1 ]; then
+    echo "prebuilt binary: no build packages needed, only the run-time libraries (installed with the binary)"
+else
+    [ -f "$HERE/packages.txt" ] || die "$HERE/packages.txt not found: this is not a complete sysdvr-lite checkout"
+    mapfile -t PACKAGES < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/packages.txt")
+    [ "${#PACKAGES[@]}" -gt 0 ] || die "$HERE/packages.txt lists no packages"
+    apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${PACKAGES[@]}"
+fi
 
 # ---- CMA ------------------------------------------------------------------------------------
 REBOOT_NEEDED=0
 if [ "$SET_CMA" -eq 1 ]; then
     step "Setting the CMA pool to 128 MB"
+    if [ ! -f "$ENV_FILE" ] && [ "$FORCE" -eq 1 ]; then echo "warning: $ENV_FILE not found, the CMA pool is left alone (the decoder needs about 128 MB of it)"; SET_CMA=0; fi
+fi
+if [ "$SET_CMA" -eq 1 ]; then
     [ -f "$ENV_FILE" ] || die "$ENV_FILE not found"
     if grep -Eq '^extraargs=.*\bcma=' "$ENV_FILE"; then
         if grep -Eq '^extraargs=.*\bcma=128M\b' "$ENV_FILE"; then
@@ -163,30 +184,33 @@ if [ "$SET_CMA" -eq 1 ]; then
 fi
 
 # ---- build and install ----------------------------------------------------------------------
-step "Building"
-BUILD_DIR="$HERE/build"
-cmake -S "$HERE" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build "$BUILD_DIR"
-cmake --install "$BUILD_DIR" --prefix "$PREFIX"
+if [ "$BINARY" -eq 1 ]; then
+    step "Installing the prebuilt binary"
+    "$HERE/tools/fetch-binary.sh" ${BINARY_SRC:+"$BINARY_SRC"}
+    touch "$HERE/.binary-install"                 # update.sh then updates the binary instead of building
+else
+    step "Building"
+    BUILD_DIR="$HERE/build"
+    cmake -S "$HERE" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$BUILD_DIR"
+    cmake --install "$BUILD_DIR" --prefix "$PREFIX"
+    rm -f "$HERE/.binary-install"
+fi
 
 # ---- service --------------------------------------------------------------------------------
 step "Installing the systemd service"
-EXEC="$PREFIX/bin/sysdvr-lite --decoder $DECODER --drm --audio-device $AUDIO_DEVICE"
-cat > /etc/systemd/system/sysdvr-lite.service <<UNIT
-[Unit]
-Description=SysDVR lite client (Switch over USB -> HDMI)
-After=systemd-udevd.service sound.target
-Wants=sound.target
-
-[Service]
-ExecStart=$EXEC
-Restart=always
-RestartSec=2
-Nice=-5
-
-[Install]
-WantedBy=multi-user.target
-UNIT
+# The options live in a file, so they can be changed without touching the unit (see the README)
+if [ "$OPTS_GIVEN" -eq 1 ] || [ ! -f "$OPTS_FILE" ]; then
+    cat > "$OPTS_FILE" <<OPTS
+# Options of the sysdvr-lite service (all options: sysdvr-lite --help).
+# After editing: sudo systemctl restart sysdvr-lite
+SYSDVR_OPTS="--decoder $DECODER --drm --audio-device $AUDIO_DEVICE"
+OPTS
+else
+    echo "keeping the options in $OPTS_FILE"
+fi
+install -m 644 "$HERE/tools/sysdvr-lite.service" /etc/systemd/system/sysdvr-lite.service
+EXEC="$PREFIX/bin/sysdvr-lite $(sed -n 's/^SYSDVR_OPTS="\(.*\)"$/\1/p' "$OPTS_FILE")"
 systemctl daemon-reload
 systemctl enable sysdvr-lite.service
 if [ "$REBOOT_NEEDED" -eq 0 ]; then

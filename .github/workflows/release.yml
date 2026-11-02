@@ -1,0 +1,52 @@
+name: Release binary
+
+# Builds sysdvr-lite on Debian 13 (the system of the Armbian image) and attaches the binary to the release
+# of a tag, so that install.sh --binary does not have to compile anything on the board.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for Debian 13 arm64
+    runs-on: ubuntu-24.04-arm
+    container: debian:trixie
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Install the packages from packages.txt
+        run: grep -vE '^[[:space:]]*(#|$)' packages.txt | xargs apt-get install -y --no-install-recommends
+
+      - name: Build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          ./build/sysdvr-lite --version
+
+      - name: Pack
+        run: tools/pack-release.sh build sysdvr-lite-linux-arm64-debian13.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sysdvr-lite-linux-arm64-debian13
+          path: sysdvr-lite-linux-arm64-debian13.tar.gz
+
+  publish:
+    name: Attach to the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sysdvr-lite-linux-arm64-debian13
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" sysdvr-lite-linux-arm64-debian13.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
