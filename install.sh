@@ -17,6 +17,8 @@
 #   --stock-sysdvr               the console has the stock SysDVR, not the patched sysmodule of this project: no
 #                                message window when the game leaves the console screen, as in version 1.0
 #   --no-cma                     do not touch the CMA setting
+#   --video-mode WxH[@HZ]        make the kernel use this display mode from boot (default rate 60), for a TV that shows
+#                                nothing before the stream, e.g. --video-mode 1280x720; "off" removes it again
 #   --binary                     install the prebuilt binary of the latest release instead of building it (Debian 13)
 #   --force                      try another arm64 board or distro (Debian based): skips the Orange Pi Zero 2W check
 #   --yes, -y                    do not ask for confirmation (required when there is no terminal)
@@ -29,6 +31,7 @@ set -euo pipefail
 AUDIO_DEVICE="plughw:CARD=HDMI,DEV=0"
 DECODER="v4l2"
 SET_CMA=1
+VIDEO_MODE=""             # --video-mode: kernel video= parameter, or "off"
 ASSUME_YES=0
 FORCE=0
 BINARY=0                  # prebuilt binary instead of a build on the board
@@ -45,7 +48,7 @@ APT_OPTS=()
 die()  { echo "error: $*" >&2; exit 1; }
 step() { echo; echo "==> $*"; }
 usage() {
-    if [ -f "${BASH_SOURCE[0]:-}" ]; then sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    if [ -f "${BASH_SOURCE[0]:-}" ]; then sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     else echo "see the header of install.sh or the README: $REPO_URL"; fi
 }
 
@@ -56,6 +59,7 @@ while [ $# -gt 0 ]; do
         --stock-sysdvr) NOTICE_OPT=" --no-notice"; OPTS_GIVEN=1; shift ;;
         --dir)          INSTALL_DIR="${2:?missing value}"; shift 2 ;;
         --no-cma)       SET_CMA=0; shift ;;
+        --video-mode)   VIDEO_MODE="${2:?missing value}"; shift 2 ;;
         --force)        FORCE=1; shift ;;
         --binary)       BINARY=1; shift ;;
         --binary-from)  BINARY=1; BINARY_SRC="${2:?missing value}"; shift 2 ;;
@@ -67,6 +71,10 @@ done
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"
 [ "$DECODER" = v4l2 ] || [ "$DECODER" = ffmpeg ] || die "--decoder must be v4l2 or ffmpeg"
+if [ -n "$VIDEO_MODE" ] && [ "$VIDEO_MODE" != off ]; then
+    [[ "$VIDEO_MODE" =~ ^[0-9]{3,4}x[0-9]{3,4}(@[0-9]{2,3})?$ ]] || die "--video-mode must look like 1280x720 or 1920x1080@60, or be off"
+    [[ "$VIDEO_MODE" == *@* ]] || VIDEO_MODE="$VIDEO_MODE@60"
+fi
 
 # ---- platform check -------------------------------------------------------------------------
 step "Checking the platform"
@@ -187,6 +195,31 @@ if [ "$SET_CMA" -eq 1 ]; then
     [ ! -f "$ENV_FILE.sysdvr-lite.bak" ] || echo "backup: $ENV_FILE.sysdvr-lite.bak"
 fi
 
+# ---- display mode of the kernel -------------------------------------------------------------
+if [ -n "$VIDEO_MODE" ]; then
+    step "Setting the display mode of the kernel ($VIDEO_MODE)"
+    [ -f "$ENV_FILE" ] || die "$ENV_FILE not found"
+    OLD_ARGS="$(grep '^extraargs=' "$ENV_FILE" || true)"
+    NEW_ARGS="$(printf '%s\n' "$OLD_ARGS" | sed -E 's/ ?video=HDMI-A-1:[^ ]*//g; s/^extraargs= +/extraargs=/')"
+    if [ "$VIDEO_MODE" != off ]; then
+        [ -n "$NEW_ARGS" ] || NEW_ARGS="extraargs="
+        case "$NEW_ARGS" in extraargs=) NEW_ARGS="extraargs=video=HDMI-A-1:$VIDEO_MODE" ;; *) NEW_ARGS="$NEW_ARGS video=HDMI-A-1:$VIDEO_MODE" ;; esac
+    fi
+    if [ "$NEW_ARGS" = "$OLD_ARGS" ]; then
+        echo "already set"
+    else
+        [ -f "$ENV_FILE.sysdvr-lite.bak" ] || cp "$ENV_FILE" "$ENV_FILE.sysdvr-lite.bak"
+        if [ -n "$OLD_ARGS" ]; then
+            grep -v '^extraargs=' "$ENV_FILE" > "$ENV_FILE.new" || true
+            [ -z "$NEW_ARGS" ] || printf '%s\n' "$NEW_ARGS" >> "$ENV_FILE.new"
+            cat "$ENV_FILE.new" > "$ENV_FILE"; rm -f "$ENV_FILE.new"
+        else
+            printf '%s\n' "$NEW_ARGS" >> "$ENV_FILE"
+        fi
+        REBOOT_NEEDED=1
+    fi
+fi
+
 # ---- build and install ----------------------------------------------------------------------
 if [ "$BINARY" -eq 1 ]; then
     step "Installing the prebuilt binary"
@@ -230,7 +263,7 @@ echo "Source:    $HERE   (update later with: sudo $HERE/update.sh)"
 echo "Logs:      journalctl -u sysdvr-lite -f"
 if [ "$REBOOT_NEEDED" -eq 1 ]; then
     echo
-    echo "The CMA size changed: reboot now to apply it:  sudo reboot"
+    echo "The kernel settings changed: reboot now to apply them:  sudo reboot"
 else
     echo "Plug in the Switch (SysDVR in USB mode), the picture should appear on the HDMI display."
 fi
