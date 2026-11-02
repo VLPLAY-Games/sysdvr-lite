@@ -15,9 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -x -S warning install.sh update.sh tools/*.sh
+        run: shellcheck -x -S warning install.sh update.sh tools/*.sh switch-module/build.sh
       - name: bash syntax
-        run: for f in install.sh update.sh tools/*.sh; do bash -n "$f"; done
+        run: for f in install.sh update.sh tools/*.sh switch-module/build.sh; do bash -n "$f"; done
       - name: python syntax
         run: python3 -m py_compile tools/*.py
 

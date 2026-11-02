@@ -1,0 +1,51 @@
+name: Switch module
+
+# Builds the patched SysDVR sysmodule of this project (USB only, the console screen comes back by itself when the
+# game leaves the screen) with devkitPro, like the upstream SysDVR workflow does. On a tag the two files are attached
+# to the release: exefs.nsp (to replace the file of an installed SysDVR) and SysDVR-USB-screenwatch.zip (for a console
+# that has no SysDVR yet, unzip to the root of the SD card).
+on:
+  push:
+    branches: [main]
+    paths: ['switch-module/**']
+    tags: ['v*']
+  pull_request:
+    paths: ['switch-module/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build the sysmodule
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          command -v python3 >/dev/null || { apt-get update && apt-get install -y --no-install-recommends python3; }
+          chmod +x switch-module/build.sh
+          switch-module/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: switch-module
+          path: |
+            switch-module/dist/exefs.nsp
+            switch-module/dist/SysDVR-USB-screenwatch.zip
+
+  publish:
+    name: Attach to the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: switch-module
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" exefs.nsp SysDVR-USB-screenwatch.zip --clobber --repo "$GITHUB_REPOSITORY"

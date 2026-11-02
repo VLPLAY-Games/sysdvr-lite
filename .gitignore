@@ -10,3 +10,10 @@ hardware/__pycache__/
 hardware/*.3mf
 __pycache__/
 .binary-install
+switch-module/dist/
+switch-module/sysmodule/build/
+switch-module/sysmodule/*.elf
+switch-module/sysmodule/*.nso
+switch-module/sysmodule/*.nsp
+switch-module/sysmodule/*.npdm
+switch-module/sysmodule/*.nacp

@@ -1,0 +1,182 @@
+--- a/sysmodule/source/core.c
++++ b/sysmodule/source/core.c
+@@ -32,6 +32,9 @@
+ const char VERSION_TAG[] = "SYSDVR_BUILD_FULL/" SYSDVR_VERSION_STRING "/" SYSDVR_PROTOCOL_VERSION;
+ #endif
+ 
++// Identifies this patched build in the binary
++const char PATCH_TAG[] = "SYSDVR_PATCH_SCREEN_WATCHDOG/1";
++
+ // Statically allocate all needed buffers
+ StaticBuffers Buffers;
+ 
+@@ -42,6 +45,9 @@
+ 	// Copy the version tag to one of the static buffers to force the linker to keep it
+ 	strcpy((char*)Buffers.UsbMode.EndpointIn, VERSION_TAG);
+ 
++	// Same for the patch tag, a volatile read is enough to make the linker keep it
++	{ char keep = *(volatile const char*)PATCH_TAG; (void)keep; }
++
+ 	// Ignore error, we'll just use a placeholder serial
+ 	if (R_SUCCEEDED(rc)) {
+ 		SetSysSerialNumber serial;
+--- a/sysmodule/source/util.c
++++ b/sysmodule/source/util.c
+@@ -2,8 +2,12 @@
+ #include "util.h"
+ #include "modes/modes.h"
+ 
++static Mutex screenModeMutex;
++
+ bool UtilSetConsoleScreenMode(bool on)
+ {
++	// called from the video thread and from the USB watchdog thread
++	mutexLock(&screenModeMutex);
+ 	Result rc = lblInitialize();
+ 	LOG("lblInitialize %x", rc);
+ 
+@@ -22,6 +26,7 @@
+ 	}
+ 	
+ 	LOG("UtilSetConsoleScreenMode(%d) %x", on, rc);
++	mutexUnlock(&screenModeMutex);
+ 	return R_SUCCEEDED(rc);
+ }
+ 
+--- a/sysmodule/source/modes/proto.c
++++ b/sysmodule/source/modes/proto.c
+@@ -37,7 +37,11 @@
+ 	return Handshake_Ok;
+ }
+ 
++// screenStateModified: the client asked for the screen to be turned off and we did it
++// screenSuspended: the screen was switched back on because the game left the screen (see ProtoScreenIdle)
++static Mutex screenMutex;
+ static bool screenStateModified = false;
++static bool screenSuspended = false;
+ 
+ static void QueryMemoryState(ProtoParsedHandshake* response)
+ {
+@@ -70,8 +74,11 @@
+ {
+ 	if (protocolFlags & ExtraFeatureFlags_TurnOffScreen)
+ 	{
++		mutexLock(&screenMutex);
+ 		UtilSetConsoleScreenMode(false);
+ 		screenStateModified = true;
++		screenSuspended = false;
++		mutexUnlock(&screenMutex);
+ 	}
+ 
+ 	if (protocolFlags & ExtraFeatureFlags_MemoryDiag)
+@@ -86,11 +93,26 @@
+ 
+ void ProtoClientGlobalStateDisconnected()
+ {
++	mutexLock(&screenMutex);
+ 	if (screenStateModified)
+ 	{
+ 		screenStateModified = false;
++		screenSuspended = false;
+ 		UtilSetConsoleScreenMode(true);
+ 	}
++	mutexUnlock(&screenMutex);
++}
++
++void ProtoScreenIdle(bool idle)
++{
++	mutexLock(&screenMutex);
++	if (screenStateModified && idle != screenSuspended)
++	{
++		// idle: the screen is switched on, otherwise off again
++		if (UtilSetConsoleScreenMode(idle))
++			screenSuspended = idle;
++	}
++	mutexUnlock(&screenMutex);
+ }
+ 
+ ProtoParsedHandshake ProtoHandshake(ProtoHandshakeAccept config, uint8_t* data, int length)
+--- a/sysmodule/source/modes/proto.h
++++ b/sysmodule/source/modes/proto.h
+@@ -102,3 +102,7 @@
+ 
+ // Must be called every time ProtoHandshake returned OK, it is safe to call multiple times
+ void ProtoClientGlobalStateDisconnected();
++
++// If the client asked for the console screen to be turned off: switch it back on (idle = true) while nothing is
++// streamed, and off again (idle = false) when the video is back. Does nothing if the screen was not turned off.
++void ProtoScreenIdle(bool idle);
+--- a/sysmodule/source/modes/USBmode.c
++++ b/sysmodule/source/modes/USBmode.c
+@@ -2,11 +2,13 @@
+ #include "../USB/Serial.h"
+ #include "../capture.h"
+ #include "proto.h"
++#include "../core.h"
+ 
+ static bool VideoConnected = false;
+ static bool AudioConnected = false;
+ static Mutex UsbMutex;
+ static u64 LastConnection;
++static u64 LastVideoSend; // last time a video packet went out, or the client connected
+ 
+ static bool ClientConnected() 
+ {
+@@ -38,6 +40,25 @@
+ 	return success;
+ }
+ 
++// While the game is not on the screen (HOME menu, a controller prompt, a system window) there is no video: the
++// video thread then waits inside grc for the next frame and cannot do anything else. This thread gives the console
++// screen back after a few seconds without video, and turns it off again when the video is back.
++static Thread WatchdogThread;
++static u8 alignas(0x1000) WatchdogStack[0x2000 + LOGGING_STACK_BOOST];
++
++static void USB_WatchdogThread(void*)
++{
++	while (IsThreadRunning)
++	{
++		svcSleepThread(5E+8L);
++
++		if (!ClientConnected() || !VideoConnected)
++			continue;
++
++		ProtoScreenIdle(armGetSystemTick() - LastVideoSend > armNsToTicks(2.5E+9));
++	}
++}
++
+ bool USB_ConnectClient()
+ {
+ 	size_t num = 0;
+@@ -79,6 +100,7 @@
+ 		CaptureAudioConnected();
+ 	
+ 	LastConnection = armGetSystemTick();
++	LastVideoSend = LastConnection;
+ 	return true;
+ }
+ 
+@@ -106,6 +128,8 @@
+ 				DisconnectClient();
+ 				svcSleepThread(5E+8);
+ 			}
++			else
++				LastVideoSend = armGetSystemTick();
+ 		}
+ 		else if (!VideoConnected)
+ 		{
+@@ -148,10 +172,14 @@
+ 	Result rc = UsbStreamingInitialize();
+ 	if (R_FAILED(rc)) 
+ 		fatalThrow(rc);
++
++	LaunchThread(&WatchdogThread, USB_WatchdogThread, NULL, WatchdogStack, sizeof(WatchdogStack), 0x2C);
+ }
+ 
+ static void USB_Exit()
+ {
++	JoinThread(&WatchdogThread);
++
+ 	mutexLock(&UsbMutex);
+ 	VideoConnected = false;
+ 	AudioConnected = false;
