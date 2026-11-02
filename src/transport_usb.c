@@ -45,6 +45,7 @@ static int find_endpoints(usb_ctx *u)
     struct libusb_config_descriptor *cfg;
     if (libusb_get_active_config_descriptor(libusb_get_device(u->h), &cfg)) return -1;
     const struct libusb_interface_descriptor *i = &cfg->interface[0].altsetting[0];
+    u->ep_in = u->ep_out = 0;
     for (int e = 0; e < i->bNumEndpoints; e++) {
         uint8_t a = i->endpoint[e].bEndpointAddress;
         if ((i->endpoint[e].bmAttributes & 3) != LIBUSB_TRANSFER_TYPE_BULK) continue;
@@ -80,7 +81,7 @@ static int usb_next(transport *t, pkt_header *h, uint8_t *payload)
     usb_ctx *u = t->priv; int got = 0;
     while (!*u->opts.stop) {
         int r = libusb_bulk_transfer(u->h, u->ep_in, u->buf, PKT_MAX_TRANSFER, &got, 800);
-        if (r == LIBUSB_ERROR_TIMEOUT) return 2;             /* the caller has things to check from time to time */
+        if (r == LIBUSB_ERROR_TIMEOUT) return got > 0 ? 1 : 2;   /* 2: nothing came, the caller has things to check; a half packet is a broken stream */
         if (r || got < PKT_HDR_SIZE || pkt_parse_header(u->buf, h) || (int)h->size > got - PKT_HDR_SIZE)
             return 1;
         memcpy(payload, u->buf + PKT_HDR_SIZE, h->size);

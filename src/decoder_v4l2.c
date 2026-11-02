@@ -130,6 +130,21 @@ static void drop_ref(v4l2d *d, ref *r)
     r->valid = 0;
 }
 
+/* After a failed picture: take every buffer back (a capture buffer queued by the failed
+ * picture would otherwise stay queued and fail the next QBUF of the same index forever),
+ * forget the references and start the streams again. The next IDR resynchronizes. */
+static int recover(v4l2d *d)
+{
+    int t = V4L2_BUF_TYPE_VIDEO_OUTPUT; xioctl(d->vfd, VIDIOC_STREAMOFF, &t);
+    t = V4L2_BUF_TYPE_VIDEO_CAPTURE; xioctl(d->vfd, VIDIOC_STREAMOFF, &t);
+    for (int i = 0; i < OUT_N; i++) xioctl(d->req[i], MEDIA_REQUEST_IOC_REINIT, NULL);
+    for (int i = 0; i < MAX_REFS; i++) d->refs[i].valid = 0;
+    memset(d->cap_busy, 0, sizeof d->cap_busy);
+    t = V4L2_BUF_TYPE_VIDEO_OUTPUT; xioctl(d->vfd, VIDIOC_STREAMON, &t);
+    t = V4L2_BUF_TYPE_VIDEO_CAPTURE; xioctl(d->vfd, VIDIOC_STREAMON, &t);
+    return -1;
+}
+
 static void on_nal(void *ctx, const uint8_t *nal, size_t len)
 {
     v4l2d *d = ctx;
@@ -138,11 +153,13 @@ static void on_nal(void *ctx, const uint8_t *nal, size_t len)
         h264_sps s; int r = h264_parse_sps(nal, len, &s);
         if (r) { fprintf(stderr, "cedrus: unsupported SPS (%d)\n", r); d->fatal = 1; return; }
         int id = s.v4l2.seq_parameter_set_id;
-        if (id < 32) { d->sps[id] = s; d->sps_ok[id] = 1; }
+        if (id >= 32) { fprintf(stderr, "cedrus: SPS id %d ignored\n", id); return; }
+        d->sps[id] = s; d->sps_ok[id] = 1;
         if (!d->ready && dev_setup(d, &s)) d->fatal = 1;
     } else if (type == 8) {
         h264_pps p; int r = h264_parse_pps(nal, len, &p);
         if (r) { fprintf(stderr, "cedrus: unsupported PPS (%d)\n", r); d->fatal = 1; return; }
+        if (p.sps_id >= 32) { fprintf(stderr, "cedrus: PPS refers to SPS id %d, ignored\n", p.sps_id); return; }
         d->pps[p.pps_id] = p; d->pps_ok[p.pps_id] = 1;
     } else if (type == 1 || type == 5) {
         if (d->n_slices < 16) { d->slices[d->n_slices].nal = nal; d->slices[d->n_slices].len = len; d->n_slices++; }
@@ -195,7 +212,7 @@ static int decode_picture(v4l2d *d, int ns)
     h264_slice sl[16];
     for (int i = 0; i < ns; i++) {
         int pid = h264_peek_pps_id(d->slices[i].nal, d->slices[i].len);
-        if (pid < 0 || !d->pps_ok[pid] || !d->sps_ok[d->pps[pid].sps_id]) { fprintf(stderr, "cedrus: slice without sps/pps\n"); return -1; }
+        if (pid < 0 || pid > 255 || !d->pps_ok[pid] || !d->sps_ok[d->pps[pid].sps_id]) { fprintf(stderr, "cedrus: slice without sps/pps\n"); return -1; }
         const h264_sps *sps = &d->sps[d->pps[pid].sps_id];
         int r = h264_parse_slice(d->slices[i].nal, d->slices[i].len, sps, d->pps, &sl[i]);
         if (r) { fprintf(stderr, "cedrus: slice parse failed (%d)\n", r); return -1; }
@@ -308,11 +325,11 @@ static int decode_picture(v4l2d *d, int ns)
         if (s->has_pred_weights) c[nc++] = mkctrl(V4L2_CID_STATELESS_H264_PRED_WEIGHTS, &s->pw, sizeof s->pw);
         int oi = d->out_i; d->out_i = (d->out_i + 1) % OUT_N;
         struct v4l2_ext_controls cs = { .which = V4L2_CTRL_WHICH_REQUEST_VAL, .count = nc, .controls = c, .request_fd = d->req[oi] };
-        if (xioctl(d->vfd, VIDIOC_S_EXT_CTRLS, &cs)) { perror("S_EXT_CTRLS request"); return -1; }
+        if (xioctl(d->vfd, VIDIOC_S_EXT_CTRLS, &cs)) { perror("S_EXT_CTRLS request"); return recover(d); }
 
         if (k == 0) {
             struct v4l2_buffer cb = { .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP, .index = cap };
-            if (xioctl(d->vfd, VIDIOC_QBUF, &cb)) { perror("QBUF cap"); return -1; }
+            if (xioctl(d->vfd, VIDIOC_QBUF, &cb)) { perror("QBUF cap"); return recover(d); }
         }
         size_t off = 0;
         uint8_t *dst = d->out[oi].map;
@@ -322,17 +339,17 @@ static int decode_picture(v4l2d *d, int ns)
             .bytesused = off + d->slices[k].len, .flags = V4L2_BUF_FLAG_REQUEST_FD | (k < ns - 1 ? V4L2_BUF_FLAG_M2M_HOLD_CAPTURE_BUF : 0),
             .request_fd = d->req[oi] };
         ob.timestamp.tv_sec = (long)ts;
-        if (xioctl(d->vfd, VIDIOC_QBUF, &ob)) { perror("QBUF out"); return -1; }
-        if (xioctl(d->req[oi], MEDIA_REQUEST_IOC_QUEUE, NULL)) { perror("REQUEST_QUEUE"); return -1; }
+        if (xioctl(d->vfd, VIDIOC_QBUF, &ob)) { perror("QBUF out"); return recover(d); }
+        if (xioctl(d->req[oi], MEDIA_REQUEST_IOC_QUEUE, NULL)) { perror("REQUEST_QUEUE"); return recover(d); }
         if (wait_request(d->req[oi])) { fprintf(stderr, "cedrus: decode timeout\n"); fatal = 1; }
         struct v4l2_buffer db = { .type = V4L2_BUF_TYPE_VIDEO_OUTPUT, .memory = V4L2_MEMORY_MMAP };
         xioctl(d->vfd, VIDIOC_DQBUF, &db);
         xioctl(d->req[oi], MEDIA_REQUEST_IOC_REINIT, NULL);
     }
-    if (fatal) return -1;
+    if (fatal) return recover(d);
 
     struct v4l2_buffer cb = { .type = V4L2_BUF_TYPE_VIDEO_CAPTURE, .memory = V4L2_MEMORY_MMAP };
-    if (xioctl(d->vfd, VIDIOC_DQBUF, &cb)) { perror("DQBUF cap"); return -1; }
+    if (xioctl(d->vfd, VIDIOC_DQBUF, &cb)) { perror("DQBUF cap"); return recover(d); }
     if (cb.flags & V4L2_BUF_FLAG_ERROR) fprintf(stderr, "cedrus: frame decoded with error flag\n");
 
     frame f = { .width = d->width, .height = d->height, .fmt = PIX_NV12, .dmabuf_fd = d->capfd[cb.index], .buf_id = cb.index, .uncached = 1, .ts = d->console_ts };

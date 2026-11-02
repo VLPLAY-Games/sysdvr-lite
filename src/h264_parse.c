@@ -31,6 +31,7 @@ static uint32_t rue(br *b)
 {
     int z = 0;
     while (!rbit(b) && !b->err && z < 32) z++;
+    if (z >= 32) { b->err = 1; return 0; }      /* not a valid code, and 1u << 32 is undefined */
     return z ? ((1u << z) - 1 + rbits(b, z)) : 0;
 }
 static int32_t rse(br *b)
@@ -77,6 +78,7 @@ int h264_parse_sps(const uint8_t *nal, size_t n, h264_sps *o)
         for (int i = 0; i < s->num_ref_frames_in_pic_order_cnt_cycle; i++) s->offset_for_ref_frame[i] = rse(&b);
     }
     s->max_num_ref_frames = rue(&b);
+    if (s->max_num_ref_frames > 16) b.err = 1;      /* the DPB holds 16 frames at most */
     if (rbit(&b)) s->flags |= V4L2_H264_SPS_FLAG_GAPS_IN_FRAME_NUM_VALUE_ALLOWED;
     s->pic_width_in_mbs_minus1 = rue(&b);
     s->pic_height_in_map_units_minus1 = rue(&b);
