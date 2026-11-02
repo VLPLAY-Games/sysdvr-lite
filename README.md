@@ -33,11 +33,48 @@ The official client is a .NET application with an ImGui/SDL front end. On an Ora
 
 Tested on an Orange Pi Zero 2W with Armbian (Debian 13, kernel 6.18) and a real Switch (SysDVR 6.3, protocol 03) over USB: 720p30, no dropped frames, hot-plug works, hardware output is bit-exact with libavcodec on the test streams. The full path (fresh Armbian image, `install.sh`, reboot, autostart, picture and sound) was verified on a clean system, and `update.sh` on an installed one.
 
-Measured on that setup: the software part of the pipeline (packet received over USB to frame on screen, measured at vblank) takes about 14 ms on average, 25 ms at worst. The console's own capture and encoding delay is not included. Audio plays on average about 20 ms behind the picture. No published latency figures for the official SysDVR clients exist to compare against.
+### Measurements
+
+Orange Pi Zero 2W, hardware decoder (`v4l2`), 1280x720@60 output, a Switch Lite over USB, 720p30 stream, a mostly static scene, release 1.2.0 (measured 2026-11-02). Latency is measured with `SYSDVR_LATENCY=1`, 9 windows of 150 frames.
+
+| What | Average | Worst |
+|---|---|---|
+| Wait in the queue | 0.05 ms | 0.09 ms |
+| Packet received over USB to frame decoded (Cedrus) | 3.3 ms | 7.5 ms |
+| Conversion on the GPU and page flip (`show()`) | 3.4 ms | 4.0 ms |
+| **Packet received to frame on screen (at vblank)** | **16.6-17.5 ms** | **26-27 ms** |
+
+About 10 ms of the total is the wait for the next refresh of a 60 Hz display, so the processing itself is around 7 ms. This is the board's part only: the console's own capture and encoding delay and the delay of the display are not included, and the whole chain from a button press to the screen has not been measured. Audio plays on average about 20 ms behind the picture.
+
+| Load while streaming | Value |
+|---|---|
+| All 4 cores | 1.6 % busy |
+| The `sysdvr-lite` process | about 7 % of one core |
+| Load average (1 / 5 / 15 min) | 0.36 / 0.34 / 0.21 |
+| Memory of the process | 87 MB |
+| SoC temperature (no heatsink) | 56.6 C |
+
+The decoder and the colour conversion run on the VPU and the GPU, so the CPU stays idle (480 MHz at the time of the measurement). A scene with a lot of motion was not measured separately.
 
 Decoder limits: progressive video only, no B-frames, no MMCO/long-term references, no scaling matrices, no FMO. This is not a practical limit: the console encoder always emits the same fixed stream (High profile, level 3.2, one reference frame, POC type 2, CABAC, one slice per frame, IDR every 30 frames), which is why the SysDVR sysmodule and clients hardcode its SPS/PPS. `SYSDVR_H264_INFO=1` prints the stream properties that were seen. An explicit error is logged if anything unsupported shows up.
 
 Not verified: other Allwinner boards (H616 variants should work but are untested), 1080p modes other than 1280x720 output (the picture is centered, never scaled).
+
+## How it compares (for a Switch Lite)
+
+The Switch Lite has no video output, so an HDMI capture card does not work with it at all (there is no dock). What is left is software streaming over the USB-C port or the network, and an unofficial hardware mod. Facts below come from each project's own page (checked 2026-11-02); where a page gives no number, none is given here. Latency figures of different projects are measured in different ways and must not be compared directly: the 17 ms above is the board's part only, while Switch Frame Tap quotes its own end-to-end figure. Every software option needs a console with custom firmware (Atmosphere) and carries the usual risk of that; only the hardware mod does not. Prices are the ones I found and may have changed.
+
+|  | Needs a PC | HOME menu / system screens | Video | Latency (as documented) | Audio | What it takes on the console | Price | Convenience |
+|---|---|---|---|---|---|---|---|---|
+| **sysdvr-lite** (this project) | No: the picture goes to an HDMI display | Game only; with the patched sysmodule the console screen comes back in the HOME menu | 720p30 | board part about 17 ms, worst 27 ms (the console's own delay is not included) | Yes, HDMI | Atmosphere custom firmware and the SysDVR sysmodule in USB mode (a patched one is optional) | the software is free; the board is the only thing to buy: an Orange Pi Zero 2W cost about 13-27 USD at launch in 2023 (1-4 GB), plus a card, a power supply and cables; check that the board is still sold | A board with the image: one command installs it, then plug in the console and play; it starts at boot, nothing to launch |
+| [SysDVR](https://github.com/exelix11/SysDVR) + its PC client, USB | Yes (Windows, Linux, macOS, Android) | Game only | 720p30 | "very low with an optimal setup", no figures | Yes | Atmosphere, SysDVR | the software is free, but it needs a PC; if you have none, that costs well over the board | Install the client and, on Windows, a USB driver; start it every time |
+| SysDVR, TCP Bridge (Wi-Fi) | Yes | Game only | 720p30 | "low", depends on the Wi-Fi, no figures | Yes | Atmosphere, SysDVR | the software is free, but it needs a PC; if you have none, that costs well over the board | Set up the network; start the client every time |
+| SysDVR, simple network mode (RTSP) | No client app: any player, phone or smart TV | Game only | 720p30 | the wiki warns it "may have high latency" | Yes | Atmosphere, SysDVR | free; a phone or a smart TV with a player (you may already have one) | Open a stream address in a player; the picture can lag behind |
+| [SysDVR-UVC](https://www.gamebrew.org/wiki/SysDVR-UVC_Switch) (a webcam) | Yes, no client software | Game only | 720p30 | no figures; up to about 2 s of black picture at the start | No (USB audio is not possible) | Atmosphere, SysDVR-UVC (it cannot run together with SysDVR) | the software is free, but it needs a PC; if you have none, that costs well over the board | No client, but the console must run SysDVR-UVC instead of SysDVR, and the picture needs a moment to appear |
+| [Switch Frame Tap](https://github.com/TomasUribe/switch-frame-tap) | Yes (PC or Android) | Yes, the HOME menu, system screens and overlays too, but only as an opt-in beta, without sound there, overlays a little less smooth | up to 1080p60 (with extra tools) | about 45 ms (720p) to 60 ms (1080p), end to end to the PC without the monitor | Yes, game only | Atmosphere, an experimental sysmodule tested on a few consoles | the software is free, but it needs a PC or an Android device; if you have none, that costs well over the board | Extra tools for 1080p and a USB driver on Windows; experimental |
+| HDMI hardware mod (SUPER5 by Taki Udon) | No: a micro HDMI port in the shell | Everything the console shows, HOME menu included | up to 1080p output, the game itself is rendered at the handheld 720p | no figures found | Yes (the page says the sound moves between HDMI and the speakers) | opening the console and swapping the board into a new shell; voids the warranty, risk of a ban and of damage; no custom firmware needed | about 50-110 USD (pre-order prices of 2024; the full kit with an OLED screen was about 110 USD), availability varies | After the install it is a plain HDMI cable; the install itself is hard |
+
+What this project does differently: it is a finished box that needs no PC, installs with one command and starts at boot, and it does not touch the console hardware. What it does not do: the stream is fixed at 720p30 by the console, the delay is higher than with the hardware mod (which sends the picture straight to HDMI, with no encoding and no USB hop, so nothing software based can match it), and the HOME menu is not captured (a message is drawn, or the console screen is given back with the optional sysmodule). If you need the HOME menu and are willing to open the console, the hardware mod fits better; if you only need the stream on a PC, the official SysDVR client is the simplest.
 
 ## Requirements
 
@@ -165,7 +202,7 @@ Still stuck? Run `sudo ./tools/doctor.sh > doctor.txt` on the board (it only rea
 
 ## Known issues
 
-- At the first connection the console screen may blink on for a moment and only then turn off. It does not affect the stream. Not fixed yet, planned for 1.2.0.
+- At the first connection the console screen may blink on for a moment and only then turn off. It does not affect the stream. Not fixed yet.
 
 ## Manual build
 

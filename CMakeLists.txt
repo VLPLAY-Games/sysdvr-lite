@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(sysdvr_lite VERSION 1.1.0 LANGUAGES C)
+project(sysdvr_lite VERSION 1.2.0 LANGUAGES C)
 
 # The client targets the Orange Pi Zero 2W (Allwinner H618): arm64 Linux only.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")

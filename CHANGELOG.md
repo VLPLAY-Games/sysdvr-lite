@@ -1,14 +1,20 @@
 # Changelog
 
-## 1.2.0 (in progress)
+## 1.2.0
 
 ### Fixes
 - Decoder: after a failed picture all buffers are taken back and the streams restarted. A capture buffer left queued used to fail every next picture until the client gave up and systemd restarted it.
 - Decoder and parser: an SPS or PPS with an id of 32 or more no longer reads past the SPS table; an invalid Exp-Golomb code (32 zero bits) and more than 16 reference frames are rejected.
 - USB: a read that timed out after part of a packet came is treated as a broken packet, not as "nothing received"; the endpoints are forgotten before they are looked up again.
 
+### Documentation
+- README: measurements (latency of the board, CPU load, temperature) and a comparison with the other ways to stream a Switch Lite, a tip about a frame rate limiter, and a note on the rare 4K TV that shows nothing before the stream.
+
 ### Installation
 - `install.sh --video-mode WxH[@HZ]` makes the kernel use that display mode from boot (`off` removes it again), for a TV that sometimes shows nothing before the stream.
+
+### Known issues
+- At the first connection the console screen may blink on for a moment and only then turn off. It does not affect the stream. Not fixed yet.
 
 ## 1.1.0
 
