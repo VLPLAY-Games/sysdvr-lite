@@ -54,3 +54,43 @@ jobs:
           echo "comparing the first $N frames"
           [ "$N" -ge 60 ] || { echo "too few frames decoded: $N"; exit 1; }
           cmp -n $((FRAME * N)) ref.yuv out.yuv
+
+      - name: Corrupted stream (the client must neither crash nor stop decoding)
+        run: |
+          # flip bits all over the test stream, after its first quarter (parameter sets and the first pictures stay intact)
+          python3 - <<'PY'
+          import random
+          d = bytearray(open('test.h264', 'rb').read())
+          random.seed(1)
+          for _ in range(400):
+              d[random.randrange(len(d) // 4, len(d))] ^= 1 << random.randrange(8)
+          open('bad.h264', 'wb').write(d)
+          PY
+          rc=0; timeout 8 ./build/sysdvr-lite --decoder ffmpeg --test-file bad.h264 --out bad.yuv || rc=$?
+          [ "$rc" -eq 124 ] || { echo "the client ended with $rc instead of running until the timeout"; exit 1; }
+          N=$(( $(stat -c %s bad.yuv) / (1280 * 720 * 3 / 2) ))
+          echo "decoded $N frames of the damaged stream"
+          [ "$N" -ge 60 ] || { echo "too few frames decoded: $N"; exit 1; }
+
+  parser:
+    name: Parser tests (ASan and UBSan)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the packages from packages.txt
+        run: |
+          sudo apt-get update
+          grep -vE '^[[:space:]]*(#|$)' packages.txt | xargs sudo apt-get install -y --no-install-recommends
+
+      - name: Build with sanitizers
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined"
+          cmake --build build --target parse-test gen-h264
+
+      - name: Hand-made cases and a damaged test stream
+        run: |
+          ./build/gen-h264 test.h264 1
+          ./build/parse-test test.h264
+          ./build/gen-h264 test4.h264 4
+          ./build/parse-test test4.h264

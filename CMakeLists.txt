@@ -69,6 +69,9 @@ if(FFMPEG_FOUND)
   target_link_libraries(ref-decode PkgConfig::FFMPEG)
 endif()
 
+# Tests of the H264 header parser against broken input (run under ASan/UBSan in CI)
+add_executable(parse-test tests/parse_test.c src/h264_parse.c)
+
 install(TARGETS sysdvr-lite RUNTIME DESTINATION bin)
 
 message(STATUS "ffmpeg=${FFMPEG_FOUND} alsa=${ALSA_FOUND} drm=${DRM_FOUND} gl=${GL_FOUND}")
