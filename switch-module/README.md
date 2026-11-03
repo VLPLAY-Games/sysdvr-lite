@@ -16,8 +16,7 @@ had to press the power button twice to see what the console wants.
   out for 2.5 seconds, the backlight is switched on (the same call SysDVR already makes when the client disconnects);
   when video goes out again it is switched off again
 - all backlight calls are serialized with a mutex (the video thread and the new thread both make them)
-- the first picture of a connection can take 3-4 seconds (the encoder starts with the client). SysDVR drops a client that gets nothing for 1.5 seconds, which ended the first session after every start and lit the console screen up for a moment (the client then connected again); until the first video packet of a connection the limit (and the watchdog's) is 8 seconds
-- 63 lines added, none removed: [screen-watchdog.patch](screen-watchdog.patch). Without a client that asked for "screen
+- 54 lines added, none removed: [screen-watchdog.patch](screen-watchdog.patch). Without a client that asked for "screen
   off" it does nothing, and the protocol is unchanged, so the stock client and `sysdvr-lite` both work with it.
 - **USB only**: TCP, RTSP and the config app are cut out (the official USB-only build does the same), so it cannot be
   switched to another mode. Building the sources with the patch removed gives the official USB-only build.

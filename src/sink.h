@@ -22,6 +22,10 @@ struct sink {
     int  (*present)(sink *s);
     /* Optional: draw the messages instead of the picture. The next frame replaces them. */
     void (*notice)(sink *s, const notice_text *blocks, int count);
+    /* Optional: the slow one-time setup (the GPU: loading the driver takes seconds on the first run after a boot),
+     * to be done in the thread that will draw, before the console is read. Done on the first frame otherwise,
+     * which stalled the USB reading for that long and made the console drop the first session after every boot. */
+    void (*warmup)(sink *s);
     void (*close)(sink *s);
     void *priv;
 };

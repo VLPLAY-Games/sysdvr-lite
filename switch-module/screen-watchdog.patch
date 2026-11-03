@@ -108,7 +108,7 @@
 +void ProtoScreenIdle(bool idle);
 --- a/sysmodule/source/modes/USBmode.c
 +++ b/sysmodule/source/modes/USBmode.c
-@@ -2,11 +2,17 @@
+@@ -2,11 +2,13 @@
  #include "../USB/Serial.h"
  #include "../capture.h"
  #include "proto.h"
@@ -119,23 +119,10 @@
  static Mutex UsbMutex;
  static u64 LastConnection;
 +static u64 LastVideoSend; // last time a video packet went out, or the client connected
-+static bool VideoSeen;    // a video packet went out since the client connected
-+// The first picture of a connection can take 3-4 seconds (the encoder starts with the client). Until it has gone
-+// out, the client is not dropped for being late and the screen is not given back for that reason.
-+#define FIRST_VIDEO_GRACE 8E+9
  
  static bool ClientConnected() 
  {
-@@ -25,7 +31,7 @@
- 	bool success;
- 	mutexLock(&UsbMutex);
- 
--	bool isTooLate = armGetSystemTick() - LastConnection > armNsToTicks(1.5E+9);
-+	bool isTooLate = armGetSystemTick() - LastConnection > armNsToTicks(VideoSeen ? 1.5E+9 : FIRST_VIDEO_GRACE);
- 	if (isTooLate || !ClientConnected())
- 		success = false;
- 	else 
-@@ -38,6 +44,25 @@
+@@ -38,6 +40,25 @@
  	return success;
  }
  
@@ -154,35 +141,31 @@
 +		if (!ClientConnected() || !VideoConnected)
 +			continue;
 +
-+		ProtoScreenIdle(armGetSystemTick() - LastVideoSend > armNsToTicks(VideoSeen ? 2.5E+9 : FIRST_VIDEO_GRACE));
++		ProtoScreenIdle(armGetSystemTick() - LastVideoSend > armNsToTicks(2.5E+9));
 +	}
 +}
 +
  bool USB_ConnectClient()
  {
  	size_t num = 0;
-@@ -79,6 +104,8 @@
+@@ -79,6 +100,7 @@
  		CaptureAudioConnected();
  	
  	LastConnection = armGetSystemTick();
 +	LastVideoSend = LastConnection;
-+	VideoSeen = false;
  	return true;
  }
  
-@@ -106,6 +133,11 @@
+@@ -106,6 +128,8 @@
  				DisconnectClient();
  				svcSleepThread(5E+8);
  			}
 +			else
-+			{
 +				LastVideoSend = armGetSystemTick();
-+				VideoSeen = true;
-+			}
  		}
  		else if (!VideoConnected)
  		{
-@@ -148,10 +180,14 @@
+@@ -148,10 +172,14 @@
  	Result rc = UsbStreamingInitialize();
  	if (R_FAILED(rc)) 
  		fatalThrow(rc);

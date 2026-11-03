@@ -24,6 +24,13 @@ static int LIBUSB_CALL on_arrived(libusb_context *ctx, libusb_device *dev, libus
     return 0;
 }
 
+static int g_trace = -1;
+static double now_ms(void)
+{
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
+}
+
 static int usb_rd(void *c, uint8_t *dst, size_t n)
 {
     usb_ctx *u = c; int got = 0;
@@ -82,7 +89,10 @@ static int usb_next(transport *t, pkt_header *h, uint8_t *payload)
 {
     usb_ctx *u = t->priv; int got = 0;
     while (!*u->opts.stop) {
+        if (g_trace < 0) g_trace = getenv("SYSDVR_USBTRACE") != NULL;
+        double t0 = g_trace ? now_ms() : 0;
         int r = libusb_bulk_transfer(u->h, u->ep_in, u->buf, PKT_MAX_TRANSFER, &got, 800);
+        if (g_trace) fprintf(stderr, "usbtrace %.0f: read took %.0f ms, rc %d, %d bytes\n", t0, now_ms() - t0, r, got);
         if (r == LIBUSB_ERROR_TIMEOUT) {
             if (got > 0) fprintf(stderr, "usb: a packet was cut by a timeout (%d bytes)\n", got);
             return got > 0 ? 1 : 2;   /* 2: nothing came, the caller has things to check; a half packet is a broken stream */

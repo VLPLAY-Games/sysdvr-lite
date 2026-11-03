@@ -209,7 +209,8 @@ Still stuck? Run `sudo ./tools/doctor.sh > doctor.txt` on the board (it only rea
 
 ## Known issues
 
-- At the first connection the console screen may blink on for a moment and only then turn off. It does not affect the stream. Not fixed yet.
+None known at the moment. If something does not work, open an issue on GitHub and attach the output of `tools/doctor.sh`.
+
 
 ## Manual build
 

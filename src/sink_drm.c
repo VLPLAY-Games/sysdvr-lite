@@ -344,9 +344,8 @@ static int gl_draw(drm *d, const frame *f, dbuf *b)
 
 static double now_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e3 + t.tv_nsec * 1e-6; }
 
-static void show_locked(sink *s, const frame *f)
+static void gl_setup(drm *d)
 {
-    drm *d = s->priv;
 #ifdef HAVE_GL
     if (!d->gl_tried) {     /* EGL contexts are per-thread: create it in the thread that draws */
         d->gl_tried = 1;
@@ -355,7 +354,23 @@ static void show_locked(sink *s, const frame *f)
             else fprintf(stderr, "drm: GPU path unavailable, falling back to CPU conversion\n");
         }
     }
+#else
+    (void)d;
 #endif
+}
+
+static void warmup(sink *s)
+{
+    drm *d = s->priv;
+    pthread_mutex_lock(&d->lock);
+    gl_setup(d);
+    pthread_mutex_unlock(&d->lock);
+}
+
+static void show_locked(sink *s, const frame *f)
+{
+    drm *d = s->priv;
+    gl_setup(d);
     static double t_cp, t_cv, t_fl; static int n; static uint8_t *tmp;
     double a = now_ms();
     frame g;
@@ -581,6 +596,6 @@ sink *sink_drm_new(const char *dev, int vw, int vh, int scale)
     pthread_mutex_init(&d->lock, NULL);
     sink *s = calloc(1, sizeof *s);
     if (!s) { close(d->fd); free(d); return NULL; }
-    s->priv = d; s->show = show; s->idle = idle; s->resume = resume; s->present = present; s->notice = notice; s->close = cls;
+    s->priv = d; s->show = show; s->idle = idle; s->resume = resume; s->present = present; s->notice = notice; s->warmup = warmup; s->close = cls;
     return s;
 }

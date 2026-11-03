@@ -9,10 +9,6 @@ static bool AudioConnected = false;
 static Mutex UsbMutex;
 static u64 LastConnection;
 static u64 LastVideoSend; // last time a video packet went out, or the client connected
-static bool VideoSeen;    // a video packet went out since the client connected
-// The first picture of a connection can take 3-4 seconds (the encoder starts with the client). Until it has gone
-// out, the client is not dropped for being late and the screen is not given back for that reason.
-#define FIRST_VIDEO_GRACE 8E+9
 
 static bool ClientConnected() 
 {
@@ -31,7 +27,7 @@ static bool SendData(void* data, size_t length)
 	bool success;
 	mutexLock(&UsbMutex);
 
-	bool isTooLate = armGetSystemTick() - LastConnection > armNsToTicks(VideoSeen ? 1.5E+9 : FIRST_VIDEO_GRACE);
+	bool isTooLate = armGetSystemTick() - LastConnection > armNsToTicks(1.5E+9);
 	if (isTooLate || !ClientConnected())
 		success = false;
 	else 
@@ -59,7 +55,7 @@ static void USB_WatchdogThread(void*)
 		if (!ClientConnected() || !VideoConnected)
 			continue;
 
-		ProtoScreenIdle(armGetSystemTick() - LastVideoSend > armNsToTicks(VideoSeen ? 2.5E+9 : FIRST_VIDEO_GRACE));
+		ProtoScreenIdle(armGetSystemTick() - LastVideoSend > armNsToTicks(2.5E+9));
 	}
 }
 
@@ -105,7 +101,6 @@ bool USB_ConnectClient()
 	
 	LastConnection = armGetSystemTick();
 	LastVideoSend = LastConnection;
-	VideoSeen = false;
 	return true;
 }
 
@@ -134,10 +129,7 @@ static void USB_VideoStreamThread(void*)
 				svcSleepThread(5E+8);
 			}
 			else
-			{
 				LastVideoSend = armGetSystemTick();
-				VideoSeen = true;
-			}
 		}
 		else if (!VideoConnected)
 		{

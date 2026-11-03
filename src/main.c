@@ -166,6 +166,7 @@ out:
 }
 
 typedef struct { pqueue *q; decoder *dec; } dec_ctx;
+static volatile int g_warm;                      /* the decode thread has done the slow one-time setup of the display */
 
 static int has_idr(const uint8_t *d, size_t n)
 {
@@ -178,6 +179,8 @@ static void *decode_thread(void *arg)
 {
     dec_ctx *c = arg;
     qpkt p;
+    if (g_sink && g_sink->warmup) g_sink->warmup(g_sink);       /* the GPU driver loads slowly the first time after a boot */
+    g_warm = 1;
     c->dec->decode(c->dec, SYSDVR_SPS, sizeof SYSDVR_SPS, 0);
     c->dec->decode(c->dec, SYSDVR_PPS, sizeof SYSDVR_PPS, 0);
     unsigned long seen_drops = 0;
@@ -395,6 +398,7 @@ int main(int argc, char **argv)
     if (aq) pthread_create(&th[n++], NULL, audio_thread, &ac);
 
     reader_ctx rc = { tr, vq, aq };
+    for (int i = 0; vq && !g_warm && !g_stop && i < 1500; i++) { struct timespec ts = { 0, 20000000 }; nanosleep(&ts, NULL); }   /* up to 30 s */
     if (g_banner && !testfile && !outfile && use_drm) {
         banner_set(vq ? dopt.name : "none", !aq ? "off" : audio ? (adev ? adev : "default") : "unavailable");
         banner_show();
