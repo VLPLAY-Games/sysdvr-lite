@@ -194,6 +194,7 @@ To undo the CMA change, restore the backup that the installer made: `sudo cp /bo
 | No picture, nothing in the log about the console | `lsusb` must show `18d1:4ee0` (SysDVR). If not: SysDVR is not in USB mode, wrong cable (it must carry data), or the wrong USB port. |
 | No picture, `journalctl -u sysdvr-lite` shows errors | Missing `/dev/video0` means the Cedrus driver is not loaded (try `--decoder ffmpeg`). "decoder keeps failing" makes the service restart itself, send the log lines before it. |
 | Picture works but no sound | Pick the ALSA device with `aplay -L` and set it as shown in [Changing settings](#changing-settings). HDMI is `plughw:CARD=HDMI,DEV=0`. |
+| Sound but no picture, the log says `not the DRM master` | Another program had the display (for example a second client). The client ends and systemd starts it again by itself. If it repeats, check that only one runs: `pgrep -a sysdvr-lite`. |
 | Audio and picture out of sync | Try `--av-offset` (milliseconds, positive = audio later) and `SYSDVR_SYNC=1` to see the measured skew. |
 | The console screen stays off after disconnecting | The sysmodule restores it itself a moment after the connection ends. If it does not, lock and unlock the console (power button), or start the client with `--keep-screen` to never turn it off. SysDVR itself marks this feature as experimental. |
 | Black screen with the console unplugged | That is the terminal; log in on the display or over SSH. The picture returns on its own when the console is plugged in. |

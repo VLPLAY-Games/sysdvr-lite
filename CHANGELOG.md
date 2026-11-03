@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.2
+
+### Fixes
+- The client no longer shows nothing while the sound plays: when it is not the DRM master of the display (another program had it) it asks for it again, says so in the log, and ends if it cannot get it, so that systemd starts it again.
+- Two clients at once (for example one started by hand next to the service): the newcomer stops the other and ends too, and systemd starts a single one (`SYSDVR_MULTI=1` switches this off, for tests).
+
+### Features
+- The "no picture from the console" message has animated dots after "Waiting for the game" (the text stays where it is), so that the screen does not look frozen.
+
 ## 1.2.1
 
 ### Fixes
