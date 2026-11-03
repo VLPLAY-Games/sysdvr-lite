@@ -83,9 +83,21 @@ static int usb_next(transport *t, pkt_header *h, uint8_t *payload)
     usb_ctx *u = t->priv; int got = 0;
     while (!*u->opts.stop) {
         int r = libusb_bulk_transfer(u->h, u->ep_in, u->buf, PKT_MAX_TRANSFER, &got, 800);
-        if (r == LIBUSB_ERROR_TIMEOUT) return got > 0 ? 1 : 2;   /* 2: nothing came, the caller has things to check; a half packet is a broken stream */
-        if (r || got < PKT_HDR_SIZE || pkt_parse_header(u->buf, h) || (int)h->size > got - PKT_HDR_SIZE)
+        if (r == LIBUSB_ERROR_TIMEOUT) {
+            if (got > 0) fprintf(stderr, "usb: a packet was cut by a timeout (%d bytes)\n", got);
+            return got > 0 ? 1 : 2;   /* 2: nothing came, the caller has things to check; a half packet is a broken stream */
+        }
+        if (!r && got == HELLO_SIZE && !hello_parse(u->buf, (uint8_t[2]){ 0 })) {
+            /* The console says hello again: it dropped this session (its hello is written in a loop until a
+             * client answers). Nothing more comes on it, the handshake has to be done again. */
+            fprintf(stderr, "usb: the console says hello again, it has dropped this session\n");
             return 1;
+        }
+        if (r || got < PKT_HDR_SIZE || pkt_parse_header(u->buf, h) || (int)h->size > got - PKT_HDR_SIZE) {
+            fprintf(stderr, "usb: bad packet (%s, %d bytes, size field %u)\n", r ? libusb_error_name(r) : "header or size",
+                    got, got >= 4 ? (unsigned)(u->buf[4] | u->buf[5] << 8 | u->buf[6] << 16 | (unsigned)u->buf[7] << 24) : 0u);
+            return 1;
+        }
         memcpy(payload, u->buf + PKT_HDR_SIZE, h->size);
         return 0;
     }
