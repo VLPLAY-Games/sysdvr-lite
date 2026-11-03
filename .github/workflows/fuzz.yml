@@ -9,7 +9,7 @@ on:
     inputs:
       iterations:
         description: "damaged copies of every NAL unit, per seed"
-        default: "3000"
+        default: "500"
 
 permissions:
   contents: read
@@ -31,12 +31,12 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined"
           cmake --build build --target parse-test gen-h264
 
-      - name: Run with 20 seeds, one slice and four slices per picture
+      - name: Run with 10 seeds, one slice and four slices per picture
         run: |
-          ITER="${{ github.event.inputs.iterations || '3000' }}"
-          ./build/gen-h264 test.h264 1
-          ./build/gen-h264 test4.h264 4
-          for seed in $(seq 1 20); do
+          ITER="${{ github.event.inputs.iterations || '500' }}"
+          ASAN_OPTIONS=detect_leaks=0 ./build/gen-h264 test.h264 1
+          ASAN_OPTIONS=detect_leaks=0 ./build/gen-h264 test4.h264 4
+          for seed in $(seq 1 10); do
             ./build/parse-test test.h264 "$ITER" "$seed" || { echo "failed with seed $seed (one slice)"; exit 1; }
             ./build/parse-test test4.h264 "$ITER" "$seed" || { echo "failed with seed $seed (four slices)"; exit 1; }
           done

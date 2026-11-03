@@ -90,7 +90,8 @@ jobs:
 
       - name: Hand-made cases and a damaged test stream
         run: |
-          ./build/gen-h264 test.h264 1
+          # gen-h264 is only a tool here: leaks in it are not what this job looks for
+          ASAN_OPTIONS=detect_leaks=0 ./build/gen-h264 test.h264 1
           ./build/parse-test test.h264
-          ./build/gen-h264 test4.h264 4
+          ASAN_OPTIONS=detect_leaks=0 ./build/gen-h264 test4.h264 4
           ./build/parse-test test4.h264

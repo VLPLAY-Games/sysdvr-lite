@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1 (in progress)
+
+### Fixes
+- Parser: weighted prediction tables with a weight denominator above 7 (invalid in a stream) are rejected instead of shifting by a huge amount (undefined behaviour). Found by the new parser tests run under UBSan.
+
+### Tests
+- CI: parser tests under ASan and UBSan (hand-made cases and random damage to the NAL units of a generated stream), a damaged-stream replay, and a weekly fuzz workflow.
+
 ## 1.2.0
 
 ### Fixes

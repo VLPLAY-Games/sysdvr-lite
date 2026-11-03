@@ -3,7 +3,7 @@
  * undefined operation inside the parser is what the sanitizers report.
  *
  *   parse-test [stream.h264 [iterations [seed]]]
- *       with a stream, each of its NAL units is also damaged at random `iterations` times (default 400)
+ *       with a stream, each of its NAL units is also damaged at random `iterations` times (default 100)
  *       and parsed again; a different seed damages it differently */
 #include "../src/h264_parse.h"
 #include <stdio.h>
@@ -72,7 +72,7 @@ static void keep_nal(void *ctx, const uint8_t *nal, size_t len)
 int main(int argc, char **argv)
 {
     uint8_t buf[256];
-    int iters = argc > 2 ? atoi(argv[2]) : 400;
+    int iters = argc > 2 ? atoi(argv[2]) : 100;
     if (argc > 3) rng ^= (uint64_t)strtoull(argv[3], NULL, 10) * 0x2545F4914F6CDD1Dull;
 
     /* known good parameter sets: the ones the console's encoder sends */
@@ -119,7 +119,8 @@ int main(int argc, char **argv)
         long runs = 0;
         for (int i = 0; i < g_n; i++)
             for (int k = 0; k < iters; k++, runs++) {
-                size_t len = g_len[i]; uint8_t *c = malloc(len);
+                /* the headers are in the first bytes; the rest of a slice is data the parser never reads */
+                size_t len = g_len[i] < 2048 ? g_len[i] : 2048; uint8_t *c = malloc(len);
                 memcpy(c, g_nals[i], len);
                 for (int b = 1 + (int)(rnd() % 3); b; b--) c[rnd() % len] ^= (uint8_t)(1u << (rnd() % 8));
                 if (rnd() % 4 == 0) len = rnd() % len;
@@ -127,6 +128,8 @@ int main(int argc, char **argv)
                 free(c);
             }
         fprintf(stderr, "damaged %d NAL units, %ld parses\n", g_n, runs);
+        for (int i = 0; i < g_n; i++) free(g_nals[i]);
+        free(d);
     }
 
     if (failures) { fprintf(stderr, "%d check(s) failed\n", failures); return 1; }

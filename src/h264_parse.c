@@ -150,8 +150,10 @@ static void pred_weights(br *b, const h264_sps *sps, const h264_slice *s, struct
 {
     memset(pw, 0, sizeof *pw);
     int chroma = sps->v4l2.chroma_format_idc != 0;
-    pw->luma_log2_weight_denom = rue(b);
-    if (chroma) pw->chroma_log2_weight_denom = rue(b);
+    uint32_t ld = rue(b), cd = chroma ? rue(b) : 0;
+    if (ld > 7 || cd > 7) { b->err = 1; return; }       /* the spec allows 0..7; 1 << 42 is undefined */
+    pw->luma_log2_weight_denom = ld;
+    pw->chroma_log2_weight_denom = cd;
     for (int l = 0; l < (s->slice_type == V4L2_H264_SLICE_TYPE_B ? 2 : 1); l++) {
         int cnt = l ? s->num_ref_l1 : s->num_ref_l0;
         struct v4l2_h264_weight_factors *f = &pw->weight_factors[l];
