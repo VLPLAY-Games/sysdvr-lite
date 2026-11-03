@@ -192,6 +192,26 @@ static int pick_display(drm *d, int vw, int vh, int quiet)
 
 /* The display was switched off, unplugged or replaced while streaming? Looked at twice a second.
  * Returns 1 when drawing makes sense. Called with the lock held. */
+/* Changing the video mode needs the DRM master. Without it the stream keeps playing (sound!) and no picture ever appears,
+ * silently: this happened when a second client had the display. Ask for it again; when it cannot be had, say so and end
+ * (SIGTERM), so that systemd starts the client again. */
+static void set_mode(drm *d, dbuf *b)
+{
+    int r = drmModeSetCrtc(d->fd, d->crtc, b->fb, 0, 0, &d->conn, 1, &d->mode);
+    if (r == 0) return;
+    int master = drmIsMaster(d->fd);
+    fprintf(stderr, "drm: cannot set the video mode (error %d), %s the DRM master\n", r, master ? "this client is" : "this client is not");
+    if (!master) {
+        drmSetMaster(d->fd);
+        if (drmIsMaster(d->fd) && drmModeSetCrtc(d->fd, d->crtc, b->fb, 0, 0, &d->conn, 1, &d->mode) == 0) {
+            fprintf(stderr, "drm: became the DRM master again\n");
+            return;
+        }
+        fprintf(stderr, "drm: another program has the display, ending so that the service starts again\n");
+        raise(SIGTERM);
+    }
+}
+
 static int display_ok(drm *d, int vw, int vh)
 {
     uint64_t t = now_ns();
@@ -396,7 +416,7 @@ drawn:;
           if (fp) { for (int y = 0; y < d->mode.vdisplay; y++) fwrite(b->map + (size_t)y * b->pitch, 4, d->mode.hdisplay, fp); fclose(fp); }
       } }
     if (d->first) {
-        drmModeSetCrtc(d->fd, d->crtc, b->fb, 0, 0, &d->conn, 1, &d->mode);
+        set_mode(d, b);
         d->first = 0;
     } else {
         wait_flip(d);
@@ -538,7 +558,7 @@ static void notice(sink *s, const notice_text *t, int count)
             FILE *fp = fopen(path, "wb");
             if (fp) { for (int yy = 0; yy < H; yy++) fwrite(b->map + (size_t)yy * b->pitch, 4, W, fp); fclose(fp); }
         }
-        if (d->first) { drmModeSetCrtc(d->fd, d->crtc, b->fb, 0, 0, &d->conn, 1, &d->mode); d->first = 0; }
+        if (d->first) { set_mode(d, b); d->first = 0; }
         else {
             wait_flip(d);
             d->inflight_recv = 0;
@@ -586,6 +606,7 @@ sink *sink_drm_new(const char *dev, int vw, int vh, int scale)
     d->fd = open(dev ? dev : "/dev/dri/card0", O_RDWR | O_CLOEXEC);
     if (d->fd < 0) { if (!quiet) perror("drm open"); free(d); return NULL; }
     drmSetMaster(d->fd);
+    if (!quiet && !drmIsMaster(d->fd)) fprintf(stderr, "drm: this client is not the DRM master (another program has the display)\n");
     d->vw = vw; d->vh = vh; d->scale = scale;
     if (pick_display(d, vw, vh, quiet)) { close(d->fd); free(d); return NULL; }
     fprintf(stderr, "drm: %s %dx%d@%d%s\n", dev ? dev : "/dev/dri/card0", d->mode.hdisplay, d->mode.vdisplay,

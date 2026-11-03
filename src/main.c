@@ -6,6 +6,7 @@
 #include "transport.h"
 #include "banner.h"
 #include "watchdog.h"
+#include <dirent.h>
 #include <getopt.h>
 #include <pthread.h>
 #include <signal.h>
@@ -42,6 +43,34 @@ static int g_audio_batching = 1;                /* 0..3, packets of audio the co
 #define SYNC_MAX_LEAD_US 40000
 #define SYNC_MAX_SILENCE_US 300000
 static void on_sig(int s) { (void)s; g_stop = 1; }
+
+/* Two clients on the same console and display get in each other's way (one ends up with the sound and no picture). When
+ * another sysdvr-lite is running, it is told to stop and this one ends as well; the service is then started again by
+ * systemd (Restart=always) and runs alone. Returns the number of other clients found. */
+static int stop_other_clients(void)
+{
+    DIR *d = opendir("/proc");
+    if (!d) return 0;
+    int found = 0;
+    pid_t me = getpid();
+    for (struct dirent *e; (e = readdir(d)); ) {
+        pid_t p = (pid_t)atoi(e->d_name);
+        if (p <= 0 || p == me) continue;
+        char path[64], line[128];
+        snprintf(path, sizeof path, "/proc/%d/stat", p);
+        FILE *f = fopen(path, "r");
+        if (!f) continue;
+        char comm[64] = "", state = '?';
+        if (fgets(line, sizeof line, f)) sscanf(line, "%*d (%63[^)]) %c", comm, &state);
+        fclose(f);
+        if (strcmp(comm, "sysdvr-lite") || state == 'Z') continue;
+        fprintf(stderr, "another sysdvr-lite is running (pid %d): stopping it\n", (int)p);
+        kill(p, SIGTERM);
+        found++;
+    }
+    closedir(d);
+    return found;
+}
 
 /* SYSDVR_PKTSTAT=1: once a second, what the console sent and what came out of the decoder (a debugging aid) */
 static int g_pktstat;
@@ -382,6 +411,10 @@ int main(int argc, char **argv)
 #ifndef HAVE_DRM
     (void)drmdev; (void)scale;
 #endif
+    if (!testfile && !outfile && !getenv("SYSDVR_MULTI") && stop_other_clients()) {
+        fprintf(stderr, "ending as well, so that the service starts a single client again\n");
+        return 1;
+    }
     g_lat = getenv("SYSDVR_LATENCY") != NULL;
     g_pktstat = getenv("SYSDVR_PKTSTAT") != NULL;
     fprintf(stderr, "sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
