@@ -18,10 +18,7 @@ pqueue *pqueue_new(int cap)
     if (!q->items) { free(q); return NULL; }
     q->cap = cap;
     pthread_mutex_init(&q->m, NULL);
-    pthread_condattr_t ca; pthread_condattr_init(&ca);
-    pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);         /* timed waits must not follow the wall clock (NTP steps it) */
-    pthread_cond_init(&q->cv, &ca);
-    pthread_condattr_destroy(&ca);
+    pthread_cond_init(&q->cv, NULL);
     return q;
 }
 
@@ -44,22 +41,6 @@ void pqueue_push(pqueue *q, const pkt_header *h, const uint8_t *data)
     s->h = *h; s->data = copy; s->recv_ns = ts.tv_sec * 1000000000ull + ts.tv_nsec;
     pthread_cond_signal(&q->cv);
     pthread_mutex_unlock(&q->m);
-}
-
-int pqueue_pop_timed(pqueue *q, qpkt *out, int ms)
-{
-    struct timespec until; clock_gettime(CLOCK_MONOTONIC, &until);
-    until.tv_nsec += (long)ms * 1000000L;
-    until.tv_sec += until.tv_nsec / 1000000000L; until.tv_nsec %= 1000000000L;
-    pthread_mutex_lock(&q->m);
-    int rc = 0;
-    while (!q->count && !q->closed && rc == 0) rc = pthread_cond_timedwait(&q->cv, &q->m, &until);
-    if (!q->count) { int r = q->closed ? -1 : 1; pthread_mutex_unlock(&q->m); return r; }
-    *out = q->items[q->head];
-    q->head = (q->head + 1) % q->cap;
-    q->count--;
-    pthread_mutex_unlock(&q->m);
-    return 0;
 }
 
 int pqueue_pop(pqueue *q, qpkt *out)

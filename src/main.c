@@ -213,20 +213,9 @@ static void *audio_thread(void *arg)
     aud_ctx *c = arg;
     qpkt p;
     int dbg = getenv("SYSDVR_SYNC") != NULL;
-    FILE *din = NULL, *dpk = NULL;                      /* SYSDVR_AUDIODUMP=prefix: what arrived (prefix.in) and when (prefix.pkts) */
-    const char *dp = getenv("SYSDVR_AUDIODUMP");
-    if (dp) {
-        char path[256];
-        snprintf(path, sizeof path, "%s.in", dp); din = fopen(path, "wb");
-        snprintf(path, sizeof path, "%s.pkts", dp); dpk = fopen(path, "w");
-    }
     double sum = 0, mn = 1e9, mx = -1e9; unsigned n = 0, dropped = 0, padded = 0;
-    int prc;
-    while ((prc = pqueue_pop_timed(c->q, &p, c->audio ? audio_poll_ms(c->audio) : 250)) != -1) {
-        if (prc == 1) { if (c->audio) audio_keepalive(c->audio); continue; }   /* nothing waiting: do not let the card run dry */
+    while (pqueue_pop(c->q, &p) == 0) {
         int skip = 0;
-        if (din) fwrite(p.data, 1, p.h.size, din);
-        if (dpk) fprintf(dpk, "%.3f %llu %u\n", now_ns() / 1e9, (unsigned long long)p.h.timestamp, (unsigned)p.h.size);
         uint64_t v = g_video_ts;
         if (c->audio && v && now_ns() - g_video_host_ns < 500000000ull) {       /* ignore stale video clocks */
             /* console timestamp of the sample that is audible right now, if this packet follows contiguously */
@@ -251,8 +240,6 @@ static void *audio_thread(void *arg)
         if (c->audio && !skip) audio_write(c->audio, p.data, p.h.size);
         free(p.data);
     }
-    if (din) fclose(din);
-    if (dpk) fclose(dpk);
     return NULL;
 }
 
