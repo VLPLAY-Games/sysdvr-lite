@@ -81,12 +81,26 @@ static const notice_text NOTICE[2] = {
     { "Нет изображения от консоли",
       { "Игра не на экране: консоль показывает главное меню,", "выбор контроллеров или другое системное окно.",
         "Посмотрите на экран консоли. Если он не горит,", "нажмите кнопку питания два раза." },
-      "Ожидание игры..." },
+      "Ожидание игры" },
     { "No picture from the console",
       { "The game is not on the screen: the console shows", "the HOME menu, a controller prompt or another",
         "system window. Look at the console screen.", "If it is off, press the power button twice." },
-      "Waiting for the game..." },
+      "Waiting for the game" },
 };
+
+/* The footer's dots count up (. .. ...) so that the screen looks alive. They are padded to the same width, so the text
+ * stays where it is and the dots grow to its right. */
+static void show_notice(int step)
+{
+    static const char *const DOTS[4] = { "   ", ".  ", ".. ", "..." };
+    static char footer[2][64];
+    notice_text t[2] = { NOTICE[0], NOTICE[1] };
+    for (int i = 0; i < 2; i++) {
+        snprintf(footer[i], sizeof footer[i], "%s%s", NOTICE[i].footer, DOTS[step & 3]);
+        t[i].footer = footer[i];
+    }
+    g_sink->notice(g_sink, t, 2);
+}
 
 #define STALL_NS 3000000000ull      /* no video for this long: the game is not on the screen (HOME, a system window...) */
 
@@ -101,7 +115,7 @@ static void *reader_thread(void *arg)
     reader_ctx *r = arg;
     uint8_t *payload = malloc(PKT_MAX_PAYLOAD);
     if (!payload) { fprintf(stderr, "out of memory\n"); g_exit_code = 1; g_stop = 1; return NULL; }
-    int need_resume, waiting = 0, stalled = 0;
+    int need_resume, waiting = 0, stalled = 0, dots = 0;
     while (!g_stop) {
         watchdog_beat();
         if (!display_present()) {          /* nothing to show it on: leave the console alone, its screen stays on */
@@ -131,10 +145,10 @@ static void *reader_thread(void *arg)
                     break;
                 }
                 if (!stalled && t - last_video > STALL_NS) {
-                    stalled = 1;
+                    stalled = 1; dots = 0;
                     fprintf(stderr, "no video from the console, the game is not on the screen\n");
-                    if (g_notice && g_sink && g_sink->notice) g_sink->notice(g_sink, NOTICE, 2);
-                }
+                    if (g_notice && g_sink && g_sink->notice) show_notice(dots);
+                } else if (stalled && g_notice && g_sink && g_sink->notice) show_notice(++dots);     /* the dots move twice a second */
             }
             pkt_header h;
             int rc = r->tr->next_packet(r->tr, &h, payload);

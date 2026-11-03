@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Features
+- The "no picture from the console" message has animated dots after "Waiting for the game", so that the screen does not look frozen.
+
 ### Fixes
 - Sound: the console now and then skips one 43 ms packet of audio (found by recording the stream, it happens in bursts every minute or so with any SysDVR client). The sound card ran dry then and restarted with a click. The client now keeps the card fed with a 2 ms fade to silence while a packet is late and fades the next audio in, so the restart (13 per 3 minutes in a test, 0 now) and its click are gone. It adds no delay: the picture-to-sound offset in the same test went from -21 ms to about -5 ms.
 - `SYSDVR_AUDIODUMP=prefix` records what the console sent (`prefix.in`) and what went to the sound card (`prefix.out`) and logs every ALSA problem, for checking the sound path byte by byte.
