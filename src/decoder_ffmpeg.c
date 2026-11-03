@@ -43,7 +43,9 @@ decoder *decoder_ffmpeg_new(const decoder_opts *o)
                                  : avcodec_find_decoder(AV_CODEC_ID_H264);
     if (!c) { fprintf(stderr, "ffmpeg decoder not found\n"); return NULL; }
     ff *f = calloc(1, sizeof *f);
+    if (!f) return NULL;
     f->ctx = avcodec_alloc_context3(c);
+    if (!f->ctx) { free(f); return NULL; }
     f->ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
     f->ctx->flags2 |= AV_CODEC_FLAG2_FAST;
     f->ctx->thread_count = o->threads > 0 ? o->threads : 2;
@@ -51,8 +53,10 @@ decoder *decoder_ffmpeg_new(const decoder_opts *o)
     f->ctx->width = 1280; f->ctx->height = 720;
     if (avcodec_open2(f->ctx, c, NULL) < 0) { fprintf(stderr, "avcodec_open2 failed\n"); free(f); return NULL; }
     f->pkt = av_packet_alloc(); f->fr = av_frame_alloc();
+    if (!f->pkt || !f->fr) { av_packet_free(&f->pkt); av_frame_free(&f->fr); avcodec_free_context(&f->ctx); free(f); return NULL; }
     fprintf(stderr, "ffmpeg decoder: %s, threads=%d\n", c->name, f->ctx->thread_count);
     decoder *d = calloc(1, sizeof *d);
+    if (!d) { av_packet_free(&f->pkt); av_frame_free(&f->fr); avcodec_free_context(&f->ctx); free(f); return NULL; }
     d->decode = ff_decode; d->close = ff_close; d->priv = f;
     return d;
 }

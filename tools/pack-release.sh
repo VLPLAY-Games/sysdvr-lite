@@ -13,12 +13,12 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 cp "$BIN" "$tmp/sysdvr-lite"
 strip "$tmp/sysdvr-lite"
 {
-    echo "# Debian packages the prebuilt sysdvr-lite needs. The last three are not linked: the GPU driver is"
+    echo "# Debian packages the prebuilt sysdvr-lite needs. The last ones are not linked: the GPU driver is"
     echo "# loaded at run time and the sound tools are used by the service and by doctor.sh"
     for lib in $(readelf -d "$tmp/sysdvr-lite" | sed -n 's/.*NEEDED.*\[\(.*\)\]/\1/p'); do
         ldd "$tmp/sysdvr-lite" | awk -v l="$lib" '$1 == l {print $3}'
     done | xargs -r readlink -f | xargs -r dpkg -S 2>/dev/null | cut -d: -f1 | sort -u
-    echo libgl1-mesa-dri; echo libegl-mesa0; echo alsa-utils
+    echo libgl1-mesa-dri; echo libegl-mesa0; echo alsa-utils; echo kbd; echo console-setup-linux
 } > "$tmp/runtime-packages.txt"
 tar -C "$tmp" -czf "$OUT" sysdvr-lite runtime-packages.txt
 echo "packed $OUT"; grep -vc '^#' "$tmp/runtime-packages.txt" | sed 's/^/runtime packages: /'

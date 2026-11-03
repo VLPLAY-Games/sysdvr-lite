@@ -403,6 +403,7 @@ decoder *decoder_v4l2_new(const decoder_opts *o)
 {
     const char *path = o->device ? o->device : "/dev/video0";
     v4l2d *d = calloc(1, sizeof *d);
+    if (!d) return NULL;
     d->vfd = open(path, O_RDWR | O_CLOEXEC);
     d->mfd = find_media();
     if (d->vfd < 0 || d->mfd < 0) {
@@ -414,6 +415,7 @@ decoder *decoder_v4l2_new(const decoder_opts *o)
     d->prefix = getenv("SYSDVR_STARTCODE") ? 3 : 0;      /* experiment knob, see docs */
     d->info = getenv("SYSDVR_H264_INFO") != NULL;
     decoder *dd = calloc(1, sizeof *dd);
+    if (!dd) { close(d->vfd); close(d->mfd); free(d); return NULL; }
     dd->decode = v4l2_decode; dd->close = v4l2_close; dd->priv = d; d->self = dd;
     return dd;
 }

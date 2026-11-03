@@ -4,6 +4,8 @@
 #include "queue.h"
 #include "sink.h"
 #include "transport.h"
+#include "banner.h"
+#include "watchdog.h"
 #include <getopt.h>
 #include <pthread.h>
 #include <signal.h>
@@ -74,6 +76,7 @@ typedef struct {
  * worded for both kinds of console: with the stock SysDVR its screen stays off (the power button gives it back),
  * with the patched sysmodule in switch-module/ it lights up by itself. */
 static int g_notice = 1;
+static int g_banner = 1;
 static const notice_text NOTICE[2] = {
     { "Нет изображения от консоли",
       { "Игра не на экране: консоль показывает главное меню,", "выбор контроллеров или другое системное окно.",
@@ -97,8 +100,10 @@ static void *reader_thread(void *arg)
 {
     reader_ctx *r = arg;
     uint8_t *payload = malloc(PKT_MAX_PAYLOAD);
+    if (!payload) { fprintf(stderr, "out of memory\n"); g_exit_code = 1; g_stop = 1; return NULL; }
     int need_resume, waiting = 0, stalled = 0;
     while (!g_stop) {
+        watchdog_beat();
         if (!display_present()) {          /* nothing to show it on: leave the console alone, its screen stays on */
             if (!waiting) { fprintf(stderr, "no display, not streaming until one is connected\n"); waiting = 1; }
             struct timespec ts = { 0, 500000000 };
@@ -115,6 +120,7 @@ static void *reader_thread(void *arg)
         uint64_t next_check = now_ns() + 500000000ull, last_video = now_ns();
         int gone = 0;
         for (;;) {
+            watchdog_beat();
             uint64_t t = now_ns();
             if (t >= next_check) {                      /* twice a second */
                 next_check = t + 500000000ull;
@@ -152,6 +158,7 @@ static void *reader_thread(void *arg)
         stalled = 0;
         fprintf(stderr, "stream lost, reconnecting\n");
         if (g_sink && g_sink->idle) g_sink->idle(g_sink);      /* back to the terminal instead of a frozen frame */
+        if (g_banner) banner_show();
     }
 out:
     free(payload);
@@ -183,7 +190,10 @@ static void *decode_thread(void *arg)
         if (!need_idr) {
             g_recv_ns = p.recv_ns;
             if (g_lat) ladd(&st_wait, (now_ns() - p.recv_ns) / 1e6);
-            if (c->dec->decode(c->dec, p.data, p.h.size, p.h.timestamp) < 0) {
+            watchdog_decode_begin();
+            int drc = c->dec->decode(c->dec, p.data, p.h.size, p.h.timestamp);
+            watchdog_decode_end();
+            if (drc < 0) {
                 /* a broken decoder never recovers on its own: exit so that systemd restarts us */
                 if (++failures >= 90) { fprintf(stderr, "decoder keeps failing, exiting\n"); g_exit_code = 1; g_stop = 1; }
             } else failures = 0;
@@ -297,6 +307,7 @@ static void usage(const char *a)
         "  --test-file FILE.h264        replay an Annex-B file instead of using USB (decoder testing)\n"
         "  --scale fit|none             when the display has no mode of the video's size: fit the picture (default) or center it 1:1\n"
         "  --no-notice                  do not draw the message when the console sends no video (for the stock SysDVR)\n"
+        "  --no-banner                  do not write the status text (English and Russian) to the text console\n"
         "  --version                    print the version and the features this build has\n", a);
 }
 
@@ -311,7 +322,7 @@ int main(int argc, char **argv)
         {"usb", 0, 0, 'u'}, {"decoder", 1, 0, 'd'}, {"ffmpeg-name", 1, 0, 'f'},
         {"threads", 1, 0, 'T'}, {"video-device", 1, 0, 'V'}, {"out", 1, 0, 'o'}, {"no-audio", 0, 0, 'A'},
         {"no-video", 0, 0, 'N'}, {"drm", 2, 0, 'D'}, {"audio-device", 1, 0, 'a'}, {"screen-off", 0, 0, 's'}, {"keep-screen", 0, 0, 'K'},
-        {"av-offset", 1, 0, 'O'}, {"audio-batching", 1, 0, 'B'}, {"test-file", 1, 0, 'F'}, {"version", 0, 0, 'v'}, {"scale", 1, 0, 'S'}, {"no-notice", 0, 0, 'n'}, {0}
+        {"av-offset", 1, 0, 'O'}, {"audio-batching", 1, 0, 'B'}, {"test-file", 1, 0, 'F'}, {"version", 0, 0, 'v'}, {"scale", 1, 0, 'S'}, {"no-notice", 0, 0, 'n'}, {"no-banner", 0, 0, 'b'}, {0}
     };
     int c;
     while ((c = getopt_long(argc, argv, "", opts, NULL)) != -1) {
@@ -334,6 +345,7 @@ int main(int argc, char **argv)
         case 'v': print_version(); return 0;
         case 'S': scale = strcmp(optarg, "none") != 0; break;
         case 'n': g_notice = 0; break;
+        case 'b': g_banner = 0; break;
         default: usage(argv[0]); return 2;
         }
     }
@@ -344,10 +356,12 @@ int main(int argc, char **argv)
     g_pktstat = getenv("SYSDVR_PKTSTAT") != NULL;
     fprintf(stderr, "sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
+    watchdog_start(&g_stop);
 
     stream_opts so = { !no_video, !no_audio, g_audio_batching, screen_off, &g_stop };
     pqueue *vq = no_video ? NULL : pqueue_new(8);    /* ~270 ms at 30 fps, then oldest is dropped */
     pqueue *aq = no_audio ? NULL : pqueue_new(32);
+    if ((!no_video && !vq) || (!no_audio && !aq)) { fprintf(stderr, "out of memory\n"); return 1; }
 
     decoder *dec = NULL;
     if (vq) {
@@ -381,6 +395,11 @@ int main(int argc, char **argv)
     if (aq) pthread_create(&th[n++], NULL, audio_thread, &ac);
 
     reader_ctx rc = { tr, vq, aq };
+    if (g_banner && !testfile && !outfile && use_drm) {
+        banner_set(vq ? dopt.name : "none", !aq ? "off" : audio ? (adev ? adev : "default") : "unavailable");
+        banner_show();
+    }
+    watchdog_armed();
     reader_thread(&rc);                              /* runs until SIGINT/SIGTERM */
 
     g_stop = 1;
@@ -388,6 +407,7 @@ int main(int argc, char **argv)
     if (aq) pqueue_close(aq);
     for (int i = 0; i < n; i++) pthread_join(th[i], NULL);
     if (g_pktstat) pthread_join(st, NULL);
+    watchdog_stop();
     if (vq) fprintf(stderr, "video packets dropped by the queue: %lu\n", pqueue_dropped(vq));
     transport_free(tr);
     if (dec) decoder_free(dec);

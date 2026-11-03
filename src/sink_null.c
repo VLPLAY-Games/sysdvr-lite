@@ -22,6 +22,9 @@ static void cls(sink *s) { free(s->priv); }
 sink *sink_null_new(void)
 {
     sink *s = calloc(1, sizeof *s);
-    s->priv = calloc(1, sizeof(st)); s->show = show; s->close = cls;
+    if (!s) return NULL;
+    s->priv = calloc(1, sizeof(st));
+    if (!s->priv) { free(s); return NULL; }
+    s->show = show; s->close = cls;
     return s;
 }

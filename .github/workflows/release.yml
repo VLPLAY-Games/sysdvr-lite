@@ -28,12 +28,17 @@ jobs:
           ./build/sysdvr-lite --version
 
       - name: Pack
-        run: tools/pack-release.sh build sysdvr-lite-linux-arm64-debian13.tar.gz
+        run: |
+          tools/pack-release.sh build sysdvr-lite-linux-arm64-debian13.tar.gz
+          sha256sum sysdvr-lite-linux-arm64-debian13.tar.gz > sysdvr-lite-linux-arm64-debian13.tar.gz.sha256
+          cat sysdvr-lite-linux-arm64-debian13.tar.gz.sha256
 
       - uses: actions/upload-artifact@v4
         with:
           name: sysdvr-lite-linux-arm64-debian13
-          path: sysdvr-lite-linux-arm64-debian13.tar.gz
+          path: |
+            sysdvr-lite-linux-arm64-debian13.tar.gz
+            sysdvr-lite-linux-arm64-debian13.tar.gz.sha256
 
   publish:
     name: Attach to the release
@@ -49,4 +54,4 @@ jobs:
       - name: Upload
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" sysdvr-lite-linux-arm64-debian13.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$GITHUB_REF_NAME" sysdvr-lite-linux-arm64-debian13.tar.gz sysdvr-lite-linux-arm64-debian13.tar.gz.sha256 --clobber --repo "$GITHUB_REPOSITORY"

@@ -5,6 +5,14 @@
 ### Fixes
 - Parser: weighted prediction tables with a weight denominator above 7 (invalid in a stream) are rejected instead of shifting by a huge amount (undefined behaviour). Found by the new parser tests run under UBSan.
 
+- Watchdog: the client tells systemd that it is alive and asks for a 60 second watchdog itself, so a hang (the reader loop stops turning round, or one picture takes over ten seconds to decode) restarts it, not only a crash. An old service file or an old client is not affected.
+- Memory: every allocation is checked; a failed one drops the packet or ends the start with a message instead of crashing.
+- `tools/fetch-binary.sh` verifies the archive against the `.sha256` file that the release workflow now attaches (an older release without it only prints a warning).
+
+### Features
+- After the boot (and when the console is unplugged) the text console shows in English and Russian that everything is running and the Switch can be connected. It sets a Cyrillic console font when `setfont` and the fonts are there (the font grows with the screen), otherwise only the English text is written. `--no-banner` turns it off.
+- `tools/readonly-root.sh enable|disable|status`: optional read-only root filesystem (overlayroot) that keeps the SD card from being written to at all; `install.sh` and `update.sh` refuse to run while it is on.
+
 ### Tests
 - CI: parser tests under ASan and UBSan (hand-made cases and random damage to the NAL units of a generated stream), a damaged-stream replay, and a weekly fuzz workflow.
 

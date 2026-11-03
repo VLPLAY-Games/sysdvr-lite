@@ -70,6 +70,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"
+[ "$(findmnt -no FSTYPE / 2>/dev/null)" != overlay ] || die "the read-only root is on (tools/readonly-root.sh): nothing written now would survive a reboot. Run: sudo /opt/sysdvr-lite/tools/readonly-root.sh disable, reboot, run this again, then enable it and reboot"
 [ "$DECODER" = v4l2 ] || [ "$DECODER" = ffmpeg ] || die "--decoder must be v4l2 or ffmpeg"
 if [ -n "$VIDEO_MODE" ] && [ "$VIDEO_MODE" != off ]; then
     [[ "$VIDEO_MODE" =~ ^[0-9]{3,4}x[0-9]{3,4}(@[0-9]{2,3})?$ ]] || die "--video-mode must look like 1280x720 or 1920x1080@60, or be off"

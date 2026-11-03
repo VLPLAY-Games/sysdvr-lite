@@ -2,6 +2,10 @@
 # Installs the prebuilt sysdvr-lite binary from the latest GitHub release instead of building it on the board:
 # no compiler and no development packages, only the run-time libraries. For Debian 13 (Armbian trixie) arm64.
 #
+# The release also carries a .sha256 file with the checksum of the archive; when it is there the archive is checked
+# against it (this catches a damaged or cut download; it does not prove who published the release, that is what
+# the HTTPS connection to GitHub is for). Releases made before 1.2.1 have no checksum: a warning is printed then.
+#
 # Usage: sudo tools/fetch-binary.sh [URL or file]     (default: the latest release)
 set -euo pipefail
 
@@ -21,10 +25,20 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 export DEBIAN_FRONTEND=noninteractive
 if [ -f "$SRC" ]; then
     cp "$SRC" "$tmp/archive.tar.gz"
+    [ ! -f "$SRC.sha256" ] || cp "$SRC.sha256" "$tmp/archive.sha256"
 else
     command -v curl >/dev/null || { apt-get update && apt-get install -y --no-install-recommends curl ca-certificates; }
     echo "downloading $SRC"
     curl -fsSL --retry 3 -o "$tmp/archive.tar.gz" "$SRC" || die "download failed (is there a release with a prebuilt binary yet?)"
+    curl -fsSL --retry 3 -o "$tmp/archive.sha256" "$SRC.sha256" 2>/dev/null || rm -f "$tmp/archive.sha256"
+fi
+if [ -f "$tmp/archive.sha256" ]; then
+    expected="$(awk 'NR == 1 {print $1}' "$tmp/archive.sha256")"
+    actual="$(sha256sum "$tmp/archive.tar.gz" | awk '{print $1}')"
+    [ -n "$expected" ] && [ "$expected" = "$actual" ] || die "the checksum of the archive does not match (expected ${expected:-none}, got $actual): the download is damaged, try again"
+    echo "checksum ok ($actual)"
+else
+    echo "warning: this release has no checksum file, the archive is not verified" >&2
 fi
 tar -xzf "$tmp/archive.tar.gz" -C "$tmp"
 [ -f "$tmp/sysdvr-lite" ] && [ -f "$tmp/runtime-packages.txt" ] || die "unexpected archive contents"

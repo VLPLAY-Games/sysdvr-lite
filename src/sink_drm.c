@@ -361,9 +361,11 @@ static void show_locked(sink *s, const frame *f)
     frame g;
     if (f->uncached && !(d->gl_ok && f->dmabuf_fd >= 0)) {            /* reading dma memory directly is ~3x slower than one linear copy */
         if (!tmp) tmp = malloc((size_t)f->stride[0] * f->height * 3 / 2);
-        memcpy(tmp, f->data[0], (size_t)f->stride[0] * f->height * 3 / 2);
-        g = *f; g.data[0] = tmp; g.data[1] = tmp + (size_t)f->stride[0] * f->height;
-        f = &g;
+        if (tmp) {                                                  /* without the copy the frame is read from dma memory, slower but fine */
+            memcpy(tmp, f->data[0], (size_t)f->stride[0] * f->height * 3 / 2);
+            g = *f; g.data[0] = tmp; g.data[1] = tmp + (size_t)f->stride[0] * f->height;
+            f = &g;
+        }
     }
     double tb = now_ms();
     dbuf *b = &d->buf[d->back];
@@ -565,6 +567,7 @@ sink *sink_drm_new(const char *dev, int vw, int vh, int scale)
     static int tries;                                   /* called again until a display shows up: complain only once */
     int quiet = tries++ > 0;
     drm *d = calloc(1, sizeof *d);
+    if (!d) return NULL;
     d->fd = open(dev ? dev : "/dev/dri/card0", O_RDWR | O_CLOEXEC);
     if (d->fd < 0) { if (!quiet) perror("drm open"); free(d); return NULL; }
     drmSetMaster(d->fd);
@@ -577,6 +580,7 @@ sink *sink_drm_new(const char *dev, int vw, int vh, int scale)
     d->first = 1;
     pthread_mutex_init(&d->lock, NULL);
     sink *s = calloc(1, sizeof *s);
+    if (!s) { close(d->fd); free(d); return NULL; }
     s->priv = d; s->show = show; s->idle = idle; s->resume = resume; s->present = present; s->notice = notice; s->close = cls;
     return s;
 }

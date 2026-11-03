@@ -23,6 +23,7 @@ The official client is a .NET application with an ImGui/SDL front end. On an Ora
 - Audio over ALSA (48 kHz stereo S16) with A/V synchronization: both streams carry console timestamps, the audio follows the picture. Video is never delayed.
 - The console screen is turned off while the client is connected and turned back on when it disconnects (the SysDVR sysmodule does this on request of the client, protocol 03). Disable with `--keep-screen`.
 - When the console is unplugged, the display goes back to the terminal (no frozen last frame) and the picture returns when it is plugged in again.
+- After the boot the text console shows, in English and Russian, that everything is running and the Switch can be connected (`--no-banner` turns it off). A watchdog restarts the client when it hangs, not only when it crashes.
 - Survives hiccups of the display and the sound: if the TV is switched off or the HDMI cable is replugged the picture comes back by itself, the program waits for a display that is not there yet, and the sound output is opened again when it becomes available (for example when the HDMI sound card was not ready at boot).
 - When the console sends no video for three seconds (the game left the screen: HOME menu, a controller prompt, a system window) a message is drawn on the display instead of a frozen picture, in Russian with an English copy under it. With the patched sysmodule from [switch-module](switch-module/README.md) the console screen then lights up by itself (and goes dark again when the game is back); with the stock SysDVR it stays off and the message says to press the console's power button twice (sleep and wake). The picture returns by itself when the game does. `--no-notice` turns the message off.
 - Fits the picture to displays that have no 1280x720 mode (`--scale fit`, the default; `--scale none` centers it 1:1).
@@ -167,6 +168,12 @@ sudo systemctl restart sysdvr-lite
 ```
 
 Re-running the installer with `--audio-device` or `--decoder` rewrites that file too. `update.sh` never touches it (a board installed before the file existed gets it filled from its old unit at the first update). Do not edit the unit file itself: `update.sh` replaces it with the one from the repository. All command line options are listed in [Usage](#usage).
+
+## Protecting the SD card against a power cut
+
+The board is meant to be unplugged without shutting it down. Armbian already helps: the root filesystem is ext4 with a journal, the logs (`/var/log`) and `/tmp` live in memory, and the client itself writes nothing to the card. A power cut during a rare write (an update, a changed setting) can still damage the card, and nothing can be done about a card that wears out.
+
+If you want the strongest protection, `sudo /opt/sysdvr-lite/tools/readonly-root.sh enable` and a reboot make the root filesystem read-only (overlayroot): everything written while the board runs goes to memory and is gone at the next boot, so the card is never written to. The price is that **nothing you change survives a reboot** (settings in `/etc/default/sysdvr-lite`, a new Wi-Fi password, packages, updates). To change something run `readonly-root.sh disable`, reboot, change it, run `enable` and reboot again; `install.sh` and `update.sh` refuse to run while it is on. `readonly-root.sh status` shows the state. If the board does not boot after `enable`, put the card in a computer and add `overlayroot=disabled` to the `extraargs=` line of `/boot/armbianEnv.txt` on the first partition. This is optional and not enabled by default.
 
 ## Uninstalling
 

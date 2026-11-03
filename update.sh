@@ -48,6 +48,7 @@ ensure_packages() {
 }
 
 [ "$(id -u)" -eq 0 ] || die "run as root: sudo ./update.sh"
+[ "$(findmnt -no FSTYPE / 2>/dev/null)" != overlay ] || die "the read-only root is on (tools/readonly-root.sh): nothing written now would survive a reboot. Run: sudo tools/readonly-root.sh disable, reboot, run this again, then enable it and reboot"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "/etc/systemd/system/$UNIT" ] || die "the service is not installed, run ./install.sh first"
 [ -f "$HERE/packages.txt" ] || die "$HERE/packages.txt not found: this is not a complete sysdvr-lite checkout"

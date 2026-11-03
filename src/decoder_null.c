@@ -12,6 +12,7 @@ static void null_close(decoder *d) {}
 decoder *decoder_null_new(void)
 {
     decoder *d = calloc(1, sizeof *d);
+    if (!d) return NULL;
     d->decode = null_decode; d->close = null_close;
     return d;
 }

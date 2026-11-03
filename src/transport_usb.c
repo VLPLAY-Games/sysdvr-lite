@@ -1,4 +1,5 @@
 #include "transport.h"
+#include "watchdog.h"
 #include <libusb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,6 +61,7 @@ static int usb_open(transport *t)
     usb_ctx *u = t->priv;
     if (u->h) { libusb_close(u->h); u->h = NULL; }
     for (int tries = 0; tries < 10 && !*u->opts.stop; tries++) {
+        watchdog_beat();                                 /* waiting for the console is not a hang */
         u->h = libusb_open_device_with_vid_pid(u->ctx, VID, PID);
         if (u->h) {
             libusb_set_auto_detach_kernel_driver(u->h, 1);
@@ -109,6 +111,7 @@ static void usb_destroy(transport *t);
 transport *transport_usb_new(const stream_opts *o)
 {
     usb_ctx *u = calloc(1, sizeof *u);
+    if (!u) return NULL;
     if (libusb_init(&u->ctx)) { free(u); return NULL; }
     u->opts = *o;
     if (libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG) &&
@@ -117,6 +120,7 @@ transport *transport_usb_new(const stream_opts *o)
         u->hotplug = 1;
     u->buf = malloc(PKT_MAX_TRANSFER);
     transport *t = calloc(1, sizeof *t);
+    if (!u->buf || !t) { free(u->buf); free(t); libusb_exit(u->ctx); free(u); return NULL; }
     t->priv = u; t->open = usb_open; t->next_packet = usb_next; t->close = usb_close; t->end = usb_end; t->destroy = usb_destroy;
     return t;
 }

@@ -21,6 +21,7 @@ sink *sink_file_new(const char *path)
     FILE *fp = fopen(path, "wb");
     if (!fp) return NULL;
     sink *s = calloc(1, sizeof *s);
+    if (!s) { fclose(fp); return NULL; }
     s->priv = fp; s->show = show; s->close = cls;
     return s;
 }

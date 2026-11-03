@@ -25,7 +25,7 @@ pkg_check_modules(DRM    IMPORTED_TARGET libdrm)
 add_executable(sysdvr-lite
   src/main.c src/proto.c src/transport_usb.c src/transport_file.c src/queue.c
   src/decoder_null.c src/decoder_v4l2.c src/h264_parse.c
-  src/sink_file.c src/sink_null.c)
+  src/sink_file.c src/sink_null.c src/watchdog.c src/banner.c)
 target_link_libraries(sysdvr-lite Threads::Threads PkgConfig::LIBUSB)
 
 # Version: the release number, plus `git describe` when built from a checkout (re-read on every configure)

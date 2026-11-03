@@ -13,6 +13,8 @@ Environment=MESA_SHADER_CACHE_DISABLE=true
 ExecStart=/usr/local/bin/sysdvr-lite $SYSDVR_OPTS
 Restart=always
 RestartSec=2
+# the client reports that it is alive (and asks for the watchdog itself, see src/watchdog.h): a hang restarts it
+NotifyAccess=main
 # a real-time-ish feel: keep the decode thread from being starved
 Nice=-5
 

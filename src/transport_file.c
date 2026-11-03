@@ -58,12 +58,14 @@ transport *transport_file_new(const char *path, volatile int *stop)
     FILE *fp = fopen(path, "rb");
     if (!fp) { perror(path); return NULL; }
     fctx *f = calloc(1, sizeof *f);
+    if (!f) { fclose(fp); return NULL; }
     fseek(fp, 0, SEEK_END); f->len = ftell(fp); rewind(fp);
-    f->d = malloc(f->len + 8);
-    if (fread(f->d, 1, f->len, fp) != (size_t)f->len) { fclose(fp); free(f->d); free(f); return NULL; }
+    f->d = f->len > 0 ? malloc(f->len + 8) : NULL;
+    if (!f->d || fread(f->d, 1, f->len, fp) != (size_t)f->len) { fclose(fp); free(f->d); free(f); return NULL; }
     fclose(fp);
     f->stop = stop;
     transport *t = calloc(1, sizeof *t);
+    if (!t) { free(f->d); free(f); return NULL; }
     t->priv = f; t->open = file_open; t->next_packet = file_next; t->close = file_close; t->destroy = file_destroy;
     return t;
 }

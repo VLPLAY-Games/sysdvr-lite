@@ -18,3 +18,6 @@ libegl-dev
 libgles-dev
 libgl1-mesa-dri
 libegl-mesa0
+# status text on the text console (setfont and Cyrillic console fonts; without them only the English text is shown)
+kbd
+console-setup-linux

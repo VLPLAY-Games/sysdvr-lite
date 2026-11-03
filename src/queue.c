@@ -13,7 +13,9 @@ struct pqueue {
 pqueue *pqueue_new(int cap)
 {
     pqueue *q = calloc(1, sizeof *q);
+    if (!q) return NULL;
     q->items = calloc(cap, sizeof *q->items);
+    if (!q->items) { free(q); return NULL; }
     q->cap = cap;
     pthread_mutex_init(&q->m, NULL);
     pthread_cond_init(&q->cv, NULL);
@@ -23,6 +25,10 @@ pqueue *pqueue_new(int cap)
 void pqueue_push(pqueue *q, const pkt_header *h, const uint8_t *data)
 {
     uint8_t *copy = malloc(h->size ? h->size : 1);
+    if (!copy) {                                    /* out of memory: the packet is lost like one dropped by a full queue */
+        pthread_mutex_lock(&q->m); q->dropped++; pthread_mutex_unlock(&q->m);
+        return;
+    }
     memcpy(copy, data, h->size);
     pthread_mutex_lock(&q->m);
     if (q->count == q->cap) {
