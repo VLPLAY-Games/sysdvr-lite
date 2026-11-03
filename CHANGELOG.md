@@ -13,6 +13,9 @@
 - After the boot (and when the console is unplugged) the text console shows in English and Russian that everything is running and the Switch can be connected. It sets a Cyrillic console font when `setfont` and the fonts are there (the font grows with the screen), otherwise only the English text is written. `--no-banner` turns it off.
 - `tools/readonly-root.sh enable|disable|status`: optional read-only root filesystem (overlayroot) that keeps the SD card from being written to at all (not tested on a real board yet); `install.sh` and `update.sh` refuse to run while it is on.
 
+### Switch module
+- The console screen no longer blinks on at the first connection after the board starts: the first picture of a connection can take about 3 seconds, which was longer than the 2.5 seconds the watchdog waited before giving the screen back. Until the first video packet of a connection it now waits 6 seconds.
+
 ### Tests
 - CI: parser tests under ASan and UBSan (hand-made cases and random damage to the NAL units of a generated stream), a damaged-stream replay, and a weekly fuzz workflow.
 

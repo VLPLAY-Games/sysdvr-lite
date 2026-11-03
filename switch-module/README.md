@@ -13,10 +13,10 @@ had to press the power button twice to see what the console wants.
 
 ## What the change is
 - a watchdog thread looks twice a second: if the client asked for the screen to be turned off and no video packet went
-  out for 2.5 seconds, the backlight is switched on (the same call SysDVR already makes when the client disconnects);
+  out for 2.5 seconds (6 seconds before the first picture of a connection, which can take about 3 seconds to start: so the screen does not blink on at the first connection), the backlight is switched on (the same call SysDVR already makes when the client disconnects);
   when video goes out again it is switched off again
 - all backlight calls are serialized with a mutex (the video thread and the new thread both make them)
-- 54 lines added, none removed: [screen-watchdog.patch](screen-watchdog.patch). Without a client that asked for "screen
+- 61 lines added, none removed: [screen-watchdog.patch](screen-watchdog.patch). Without a client that asked for "screen
   off" it does nothing, and the protocol is unchanged, so the stock client and `sysdvr-lite` both work with it.
 - **USB only**: TCP, RTSP and the config app are cut out (the official USB-only build does the same), so it cannot be
   switched to another mode. Building the sources with the patch removed gives the official USB-only build.
