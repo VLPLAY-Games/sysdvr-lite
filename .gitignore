@@ -4,10 +4,6 @@ build/
 *.nv12
 *.xrgb
 
-# local generators of the 3D-printable dock (not published)
-hardware/*.py
-hardware/__pycache__/
-hardware/*.3mf
 __pycache__/
 .binary-install
 switch-module/dist/

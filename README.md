@@ -1,5 +1,7 @@
 # sysdvr-lite
 
+Board LED: slow green blinking while waiting for the Switch, a game, or HDMI; steady green while displaying video. At CPU temperatures ≥80 °C it blinks quickly until the CPU cools to ≤76 °C.
+
 <p align="center"><b>English</b> &nbsp;|&nbsp; <a href="README.ru.md">Русский</a></p>
 
 A tiny, dependency-light client for [SysDVR](https://github.com/exelix11/SysDVR) written in C, built for the Orange Pi Zero 2W (Allwinner H618, arm64 Linux) which cannot afford the official .NET client.
@@ -319,8 +321,10 @@ docs/DESIGN.md       architecture and hardware notes
 README.ru.md         this file in Russian
 ```
 
+## 3D-printed case
+
+I tested the custom dock models many times, but shortcomings remained in every version, so I removed them from the repository. I now use [Orange Pi Zero 2W Case](https://www.printables.com/model/650329-orange-pi-zero-2w-case) simply as a case for the board.
+
 ## Credits and license
 
 The protocol was implemented from the [SysDVR](https://github.com/exelix11/SysDVR) documentation and by observing its behaviour. SysDVR is by exelix11 and is licensed under the GPL-2.0, which is also the license of this repository (see `LICENSE`). This project is not affiliated with Nintendo or with the SysDVR project.
-
-The 3D-printable dock in `hardware/` is licensed differently: its two stand parts are a remix of [Working Nintendo Switch Lite Charging Dock](https://www.printables.com/model/555711-working-nintendo-switch-lite-charging-dock) by [MM_Printing](https://www.printables.com/@MM_Printing) and stay under CC BY-NC 4.0 (non-commercial use, credit the author). Details in [hardware/README.md](hardware/README.md#license-and-credits).

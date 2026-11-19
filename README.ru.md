@@ -1,5 +1,7 @@
 # sysdvr-lite
 
+Индикатор платы: медленно мигает зелёным при ожидании Switch, игры или HDMI; постоянно горит зелёным при выводе изображения. При температуре CPU ≥80 °C быстро мигает до охлаждения до ≤76 °C.
+
 <p align="center"><a href="README.md">English</a> &nbsp;|&nbsp; <b>Русский</b></p>
 
 Маленький клиент [SysDVR](https://github.com/exelix11/SysDVR) на C с минимумом зависимостей. Сделан для Orange Pi Zero 2W (Allwinner H618, arm64 Linux), которой официальный клиент на .NET не по силам.
@@ -318,8 +320,10 @@ docs/DESIGN.md       архитектура и заметки по железу 
 README.md            этот файл на английском
 ```
 
+## 3D-печатный чехол
+
+Я провёл множество тестов собственных моделей дока, но в каждом варианте оставались недочёты, поэтому удалил их из репозитория. Сейчас я использую [Orange Pi Zero 2W Case](https://www.printables.com/model/650329-orange-pi-zero-2w-case) просто как чехол для платы.
+
 ## Благодарности и лицензия
 
 Протокол реализован по документации [SysDVR](https://github.com/exelix11/SysDVR) и по наблюдению за его поведением. SysDVR написан exelix11 и распространяется по лицензии GPL-2.0, которая действует и для этого репозитория (см. `LICENSE`). Проект не связан с Nintendo и с проектом SysDVR.
-
-3D-печатный док в `hardware/` лицензирован иначе: две детали подставки являются ремиксом модели [Working Nintendo Switch Lite Charging Dock](https://www.printables.com/model/555711-working-nintendo-switch-lite-charging-dock) автора [MM_Printing](https://www.printables.com/@MM_Printing) и остаются под CC BY-NC 4.0 (только некоммерческое использование, с указанием автора). Подробности в [hardware/README.md](hardware/README.md#license-and-credits).

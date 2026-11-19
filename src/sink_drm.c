@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "sink.h"
+#include "status_led.h"
 #include "font.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -195,21 +196,22 @@ static int pick_display(drm *d, int vw, int vh, int quiet)
 /* Changing the video mode needs the DRM master. Without it the stream keeps playing (sound!) and no picture ever appears,
  * silently: this happened when a second client had the display. Ask for it again; when it cannot be had, say so and end
  * (SIGTERM), so that systemd starts the client again. */
-static void set_mode(drm *d, dbuf *b)
+static int set_mode(drm *d, dbuf *b)
 {
     int r = drmModeSetCrtc(d->fd, d->crtc, b->fb, 0, 0, &d->conn, 1, &d->mode);
-    if (r == 0) return;
+    if (r == 0) return 0;
     int master = drmIsMaster(d->fd);
     fprintf(stderr, "drm: cannot set the video mode (error %d), %s the DRM master\n", r, master ? "this client is" : "this client is not");
     if (!master) {
         drmSetMaster(d->fd);
         if (drmIsMaster(d->fd) && drmModeSetCrtc(d->fd, d->crtc, b->fb, 0, 0, &d->conn, 1, &d->mode) == 0) {
             fprintf(stderr, "drm: became the DRM master again\n");
-            return;
+            return 0;
         }
         fprintf(stderr, "drm: another program has the display, ending so that the service starts again\n");
         raise(SIGTERM);
     }
+    return -1;
 }
 
 static int display_ok(drm *d, int vw, int vh)
@@ -416,12 +418,15 @@ drawn:;
           if (fp) { for (int y = 0; y < d->mode.vdisplay; y++) fwrite(b->map + (size_t)y * b->pitch, 4, d->mode.hdisplay, fp); fclose(fp); }
       } }
     if (d->first) {
-        set_mode(d, b);
+        if (!set_mode(d, b)) status_led_frame();
         d->first = 0;
     } else {
         wait_flip(d);
         d->inflight_recv = f->recv_ns;
-        if (!drmModePageFlip(d->fd, d->crtc, b->fb, DRM_MODE_PAGE_FLIP_EVENT, d)) d->flip_pending = 1;
+        if (!drmModePageFlip(d->fd, d->crtc, b->fb, DRM_MODE_PAGE_FLIP_EVENT, d)) {
+            d->flip_pending = 1;
+            status_led_frame();
+        }
     }
     d->back ^= 1;
     double e = now_ms();

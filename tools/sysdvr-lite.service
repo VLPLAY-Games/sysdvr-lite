@@ -25,6 +25,8 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelTunables=yes
+# Only the board status LED is writable; the remaining sysfs stays protected.
+ReadWritePaths=-/sys/devices/platform/leds/leds/green:status
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes

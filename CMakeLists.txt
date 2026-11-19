@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(sysdvr_lite VERSION 1.2.2 LANGUAGES C)
+project(sysdvr_lite VERSION 1.2.3 LANGUAGES C)
 
 # The client targets the Orange Pi Zero 2W (Allwinner H618): arm64 Linux only.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
@@ -25,7 +25,7 @@ pkg_check_modules(DRM    IMPORTED_TARGET libdrm)
 add_executable(sysdvr-lite
   src/main.c src/proto.c src/transport_usb.c src/transport_file.c src/queue.c
   src/decoder_null.c src/decoder_v4l2.c src/h264_parse.c
-  src/sink_file.c src/sink_null.c src/watchdog.c src/banner.c)
+  src/sink_file.c src/sink_null.c src/watchdog.c src/banner.c src/status_led.c)
 target_link_libraries(sysdvr-lite Threads::Threads PkgConfig::LIBUSB)
 
 # Version: the release number, plus `git describe` when built from a checkout (re-read on every configure)
@@ -71,6 +71,10 @@ endif()
 
 # Tests of the H264 header parser against broken input (run under ASan/UBSan in CI)
 add_executable(parse-test tests/parse_test.c src/h264_parse.c)
+add_executable(status-led-test tests/status_led_test.c)
+target_link_libraries(status-led-test Threads::Threads)
+# Keep assertions active in the test even in Release builds.
+target_compile_options(status-led-test PRIVATE -UNDEBUG)
 
 install(TARGETS sysdvr-lite RUNTIME DESTINATION bin)
 

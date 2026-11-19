@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.3
+
+### Features
+- Green board LED: slow blinking while waiting for the Switch, a game, or HDMI; steady while video frames are displayed. CPU temperature at or above 80 °C overrides this with fast blinking until it cools to 76 °C or below.
+
+### Documentation
+- Removed the custom 3D dock models after repeated tests continued to reveal shortcomings. The README now links to the Orange Pi Zero 2W Case used simply as a case for the board.
+
 ## 1.2.2
 
 ### Fixes
@@ -85,7 +93,7 @@ First stable release: a small C client for [SysDVR](https://github.com/exelix11/
 - `tools/doctor.sh` collects a report for bug reports (board, system, USB, decoder, display, audio, service log) without the host name or addresses.
 - CI: shellcheck for the scripts, and an arm64 build with a decoder replay test against the reference decoder.
 - Issue templates for bug reports and compatibility reports. README in English and Russian.
-- `hardware/`: a 3D-printable dock for the Switch Lite with a block for the board (an early version, see `hardware/README.md`). The stand parts are a remix of a model by MM_Printing under CC BY-NC 4.0, the rest is under the repository license.
+- Added early 3D-printable dock models for the Switch Lite and board (removed in 1.2.3 after repeated testing).
 
 ### Tested on
 Orange Pi Zero 2W, Armbian (Debian 13, kernel 6.18), Switch Lite with SysDVR 6.3 (protocol 03) over USB, two Sony TVs and an MSI monitor. Fresh installs and updates were run on clean cards.

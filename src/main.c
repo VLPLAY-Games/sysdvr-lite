@@ -6,6 +6,7 @@
 #include "transport.h"
 #include "banner.h"
 #include "watchdog.h"
+#include "status_led.h"
 #include <dirent.h>
 #include <getopt.h>
 #include <pthread.h>
@@ -153,6 +154,7 @@ static void *reader_thread(void *arg)
             nanosleep(&ts, NULL);
             continue;
         }
+        status_led_waiting();
         waiting = 0;
         if (r->tr->open(r->tr)) {          /* console not there yet: keep waiting, it may be plugged in later */
             struct timespec ts = { 1, 0 };
@@ -168,6 +170,7 @@ static void *reader_thread(void *arg)
             if (t >= next_check) {                      /* twice a second */
                 next_check = t + 500000000ull;
                 gone = display_present() ? 0 : gone + 1;
+                if (gone) status_led_waiting();
                 if (gone >= 4) {                        /* for two seconds: not a replug, the display is gone */
                     fprintf(stderr, "the display is gone, ending the stream so that the console wakes up\n");
                     end_session(r->tr);
@@ -198,6 +201,7 @@ static void *reader_thread(void *arg)
             }
             else if ((h.flags & META_AUDIO) && r->aq) { pqueue_push(r->aq, &h, payload); CNT(c_apk, 1); }
         }
+        status_led_waiting();
         stalled = 0;
         fprintf(stderr, "stream lost, reconnecting\n");
         if (g_sink && g_sink->idle) g_sink->idle(g_sink);      /* back to the terminal instead of a frozen frame */
@@ -407,6 +411,7 @@ int main(int argc, char **argv)
     fprintf(stderr, "sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
     watchdog_start(&g_stop);
+    if (use_drm && !testfile && !outfile) status_led_start();
 
     stream_opts so = { !no_video, !no_audio, g_audio_batching, screen_off, &g_stop };
     pqueue *vq = no_video ? NULL : pqueue_new(8);    /* ~270 ms at 30 fps, then oldest is dropped */
