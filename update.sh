@@ -8,9 +8,12 @@
 # A board installed with install.sh --binary gets the prebuilt binary of the latest release instead of a build.
 #
 # Usage: sudo ./update.sh [--no-pull] [--build]
+#        sudo ./update.sh --language en|ru  (change interface language only, no download or rebuild)
 #   --no-pull  rebuild the current checkout only          --build  build from source even if installed with --binary
 set -euo pipefail
 
+INTERFACE_LANGUAGE=""
+UPDATE_OPTIONS=0
 PULL=1
 FORCE_BUILD=0
 PREFIX=/usr/local
@@ -18,8 +21,9 @@ UNIT=sysdvr-lite.service
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --no-pull) PULL=0; shift ;;
-        --build)   FORCE_BUILD=1; shift ;;
+        --language) INTERFACE_LANGUAGE="${2:?missing value}"; shift 2 ;;
+        --no-pull) UPDATE_OPTIONS=1; PULL=0; shift ;;
+        --build)   UPDATE_OPTIONS=1; FORCE_BUILD=1; shift ;;
         -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
@@ -51,6 +55,18 @@ ensure_packages() {
 [ "$(findmnt -no FSTYPE / 2>/dev/null)" != overlay ] || die "the read-only root is on (tools/readonly-root.sh): nothing written now would survive a reboot. Run: sudo tools/readonly-root.sh disable, reboot, run this again, then enable it and reboot"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "/etc/systemd/system/$UNIT" ] || die "the service is not installed, run ./install.sh first"
+if [ -n "$INTERFACE_LANGUAGE" ]; then
+    [ "$INTERFACE_LANGUAGE" = en ] || [ "$INTERFACE_LANGUAGE" = ru ] || die "--language must be en or ru"
+    [ "$UPDATE_OPTIONS" -eq 0 ] || die "--language changes settings only; run the update separately"
+    # shellcheck source=tools/language.sh
+    . "$HERE/tools/language.sh"
+    sysdvr_set_language /etc/default/sysdvr-lite "$INTERFACE_LANGUAGE"
+    systemctl restart "$UNIT"
+    sleep 2
+    systemctl is-active --quiet "$UNIT" || die "the service did not start; see journalctl -u sysdvr-lite"
+    echo "Interface language: $INTERFACE_LANGUAGE. Service restarted; no download or rebuild."
+    exit 0
+fi
 [ -f "$HERE/packages.txt" ] || die "$HERE/packages.txt not found: this is not a complete sysdvr-lite checkout"
 
 if [ "$PULL" -eq 1 ]; then

@@ -25,7 +25,7 @@ pkg_check_modules(DRM    IMPORTED_TARGET libdrm)
 add_executable(sysdvr-lite
   src/main.c src/proto.c src/transport_usb.c src/transport_file.c src/queue.c
   src/decoder_null.c src/decoder_v4l2.c src/h264_parse.c
-  src/sink_file.c src/sink_null.c src/watchdog.c src/banner.c src/status_led.c src/hdmi_audio.c)
+  src/sink_file.c src/sink_null.c src/watchdog.c src/banner.c src/status_led.c src/hdmi_audio.c src/ui_language.c)
 target_link_libraries(sysdvr-lite Threads::Threads PkgConfig::LIBUSB)
 
 # Version: the release number, plus `git describe` when built from a checkout (re-read on every configure)
@@ -76,7 +76,7 @@ target_link_libraries(status-led-test Threads::Threads)
 # Keep assertions active in the test even in Release builds.
 target_compile_options(status-led-test PRIVATE -UNDEBUG)
 
-add_executable(hdmi-audio-test tests/hdmi_audio_test.c src/hdmi_audio.c src/hdmi_warning.c src/font.c)
+add_executable(hdmi-audio-test tests/hdmi_audio_test.c src/hdmi_audio.c src/hdmi_warning.c src/font.c src/ui_language.c)
 target_include_directories(hdmi-audio-test PRIVATE src)
 target_compile_options(hdmi-audio-test PRIVATE -UNDEBUG)
 

@@ -1,4 +1,6 @@
+#define _POSIX_C_SOURCE 200809L
 #include "hdmi_audio.h"
+#include "ui_language.h"
 #include "hdmi_warning.h"
 #include <assert.h>
 #include <stdio.h>
@@ -125,7 +127,14 @@ static void draw_tests(const char *preview)
 }
 int main(int argc, char **argv)
 {
+    assert(!setenv("SYSDVR_LANGUAGE", "invalid", 1));
+    ui_language_init(); assert(!ui_is_russian());
     parse_tests(); state_tests(); draw_tests(argc > 1 ? argv[1] : NULL);
+    assert(!setenv("SYSDVR_LANGUAGE", "ru", 1));
+    ui_language_init(); assert(ui_is_russian());
+    draw_tests(NULL);
+    assert(!setenv("SYSDVR_LANGUAGE", "en", 1));
+    ui_language_init(); assert(!ui_is_russian());
     puts("HDMI audio tests passed");
     return 0;
 }

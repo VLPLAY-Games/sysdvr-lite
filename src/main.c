@@ -8,6 +8,7 @@
 #include "watchdog.h"
 #include "status_led.h"
 #include "hdmi_audio.h"
+#include "ui_language.h"
 #include <dirent.h>
 #include <getopt.h>
 #include <pthread.h>
@@ -139,7 +140,8 @@ static void show_notice(int step)
         snprintf(footer[i], sizeof footer[i], "%s%s", NOTICE[i].footer, DOTS[step & 3]);
         t[i].footer = footer[i];
     }
-    g_sink->notice(g_sink, t, 2);
+    int selected = ui_is_russian() ? 0 : 1;
+    g_sink->notice(g_sink, &t[selected], 1);
 }
 
 #define STALL_NS 3000000000ull      /* no video for this long: the game is not on the screen (HOME, a system window...) */
@@ -379,6 +381,7 @@ static void usage(const char *a)
 
 int main(int argc, char **argv)
 {
+    ui_language_init();
     const char *outfile = NULL, *adev = NULL, *drmdev = NULL, *testfile = NULL;
     int use_drm = 0, no_audio = 0, no_video = 0, scale = 1;
     int screen_off = 1;       /* turn the console screen off while streaming, the sysmodule restores it on disconnect */

@@ -321,7 +321,20 @@ docs/DESIGN.md       architecture and hardware notes
 README.ru.md         this file in Russian
 ```
 
-The waiting screen shows a complete English block followed by Russian. Video and audio statuses use plain language and colours; decoder names, audio device and version remain in the footer. It is a static framebuffer, redrawn only when the state changes, with no animation or rendering loop.
+The waiting screen uses the selected interface language (English by default). Video and audio statuses use plain language and colours; decoder names, audio device and version remain in the footer. It is a static framebuffer, redrawn only when the state changes, with no animation or rendering loop.
+
+## Interface language
+
+The installer asks for English or Russian on the first interactive installation. Use `install.sh --language en` or `install.sh --language ru` to select explicitly; unattended installation defaults to English. The choice is stored as `SYSDVR_LANGUAGE` in `/etc/default/sysdvr-lite` and applies to waiting screens, HOME messages and HDMI warnings. Logs remain in English. Ordinary updates preserve your choice.
+
+Change the language later without downloading or rebuilding:
+
+```bash
+sudo /opt/sysdvr-lite/update.sh --language en
+sudo /opt/sysdvr-lite/update.sh --language ru
+```
+
+Each command only changes the language setting and restarts the service. Run an ordinary update separately.
 
 ## HDMI audio warnings
 

@@ -18,6 +18,8 @@ jobs:
         run: shellcheck -x -S warning install.sh update.sh tools/*.sh switch-module/build.sh
       - name: bash syntax
         run: for f in install.sh update.sh tools/*.sh switch-module/build.sh; do bash -n "$f"; done
+      - name: Language configuration
+        run: bash tests/language_test.sh
       - name: python syntax
         run: python3 -m py_compile tools/*.py
 

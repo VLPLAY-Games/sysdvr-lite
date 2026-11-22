@@ -1,5 +1,6 @@
 #include "hdmi_warning.h"
 #include "font.h"
+#include "ui_language.h"
 #include <string.h>
 
 static uint32_t codepoint(const char **p)
@@ -55,14 +56,15 @@ void hdmi_warning_draw(uint8_t *pixels, int W, int H, unsigned pitch, hdmi_warni
     }
     int scale = W >= 1920 && H >= 1000 ? 2 : 1;
     int margin = 16 * scale, pad = 12 * scale, longest = 0;
-    const char *lines[] = { ru, detail_ru, en, detail_en };
-    for (int i = 0; i < 4; i++) {
+    int russian = ui_is_russian();
+    const char *lines[] = { russian ? ru : en, russian ? detail_ru : detail_en };
+    for (int i = 0; i < 2; i++) {
         const char *p = lines[i]; int count = 0;
         while (*p) { codepoint(&p); count++; }
         if (count > longest) longest = count;
     }
     int card_w = longest * FONT_CELL_W * scale + pad * 2;
-    int card_h = (FONT_CELL_H + 5) * scale * 4 + pad * 2;
+    int card_h = (FONT_CELL_H + 5) * scale * 2 + pad * 2;
     int x = W - margin - card_w, y = margin;
     if (x < 0) x = 0;
     for (int py = y; py < y + card_h && py < H; py++) {
@@ -70,7 +72,7 @@ void hdmi_warning_draw(uint8_t *pixels, int W, int H, unsigned pitch, hdmi_warni
         for (int px = x; px < x + card_w && px < W; px++)
             line[px] = px < x + 4 * scale ? 0x00FFC04D : 0x0021262D;
     }
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 2; i++)
         text(pixels, W, H, pitch, x + pad, y + pad + i * (FONT_CELL_H + 5) * scale,
-             lines[i], (i == 0 || i == 2) ? 0x00FFC04D : 0x00E5E7EB, scale);
+             lines[i], (i == 0) ? 0x00FFC04D : 0x00E5E7EB, scale);
 }
