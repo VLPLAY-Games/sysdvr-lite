@@ -321,6 +321,12 @@ docs/DESIGN.md       architecture and hardware notes
 README.ru.md         this file in Russian
 ```
 
+## HDMI audio warnings
+
+The client checks the connected display’s EDID for stereo LPCM at 48 kHz / 16 bit. If the display does not advertise this format, a warning appears at the top right of the video for eight seconds and stays visible while waiting for the console or game. Unknown or invalid display data and an unavailable ALSA output have separate messages. The warning clears when the condition recovers and is shown again for a new stream or display.
+
+This checks advertised audio support, not the presence of speakers or the TV’s volume setting. `--no-audio`, offline replays, and explicitly selected non-HDMI audio devices disable these warnings. Headphone mode and volume control from the Switch are not part of this stage.
+
 ## 3D-printed case
 
 I tested the custom dock models many times, but shortcomings remained in every version, so I removed them from the repository. I now use [Orange Pi Zero 2W Case](https://www.printables.com/model/650329-orange-pi-zero-2w-case) simply as a case for the board.

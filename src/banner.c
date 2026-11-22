@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "banner.h"
+#include "hdmi_audio.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,18 +71,24 @@ void banner_show(void)
             cyrillic = run(argv) == 0;
         }
     }
-    char buf[1024];
+    char buf[4096];
+    hdmi_warning warning = hdmi_audio_warning();
     int n = snprintf(buf, sizeof buf, "\033[2J\033[H\033[0m"
         "sysdvr-lite %s\n\n"
         "Everything is running. You can connect the Switch now:\n"
         "SysDVR in USB mode, the USB cable plugged into this board.\n"
         "Decoder: %s   Audio: %s\n",
         SYSDVR_VERSION, g_decoder, g_audio);
-    if (cyrillic)
+    if (warning != HDMI_WARNING_NONE)
+        n += snprintf(buf + n, sizeof buf - (size_t)n, "\n[!] %s\n", hdmi_audio_message(warning, 0));
+    if (cyrillic) {
         n += snprintf(buf + n, sizeof buf - (size_t)n, "\n"
             "Всё запущено. Можно подключать консоль:\n"
             "SysDVR в режиме USB, USB-кабель вставлен в эту плату.\n"
             "Декодер: %s   Звук: %s\n", g_decoder, g_audio);
+        if (warning != HDMI_WARNING_NONE)
+            n += snprintf(buf + n, sizeof buf - (size_t)n, "\n[!] %s\n", hdmi_audio_message(warning, 1));
+    }
     if (n > 0) { ssize_t w = write(fd, buf, (size_t)n < sizeof buf ? (size_t)n : sizeof buf - 1); (void)w; }
     close(fd);
 }

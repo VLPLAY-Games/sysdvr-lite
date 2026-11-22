@@ -7,6 +7,7 @@
 #include "banner.h"
 #include "watchdog.h"
 #include "status_led.h"
+#include "hdmi_audio.h"
 #include <dirent.h>
 #include <getopt.h>
 #include <pthread.h>
@@ -146,9 +147,14 @@ static void *reader_thread(void *arg)
     uint8_t *payload = malloc(PKT_MAX_PAYLOAD);
     if (!payload) { fprintf(stderr, "out of memory\n"); g_exit_code = 1; g_stop = 1; return NULL; }
     int need_resume, waiting = 0, stalled = 0, dots = 0;
+    hdmi_warning previous_warning = hdmi_audio_warning();
     while (!g_stop) {
         watchdog_beat();
-        if (!display_present()) {          /* nothing to show it on: leave the console alone, its screen stays on */
+        int present = display_present();
+        hdmi_warning warning = hdmi_audio_warning();
+        if (g_banner && warning != previous_warning) banner_show();
+        previous_warning = warning;
+        if (!present) {          /* nothing to show it on: leave the console alone, its screen stays on */
             if (!waiting) { fprintf(stderr, "no display, not streaming until one is connected\n"); waiting = 1; }
             struct timespec ts = { 0, 500000000 };
             nanosleep(&ts, NULL);
@@ -410,6 +416,7 @@ int main(int argc, char **argv)
     g_pktstat = getenv("SYSDVR_PKTSTAT") != NULL;
     fprintf(stderr, "sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
+    hdmi_audio_enable(use_drm && !no_audio && !testfile && !outfile && (!adev || strstr(adev, "HDMI")));
     watchdog_start(&g_stop);
     if (use_drm && !testfile && !outfile) status_led_start();
 
@@ -436,7 +443,10 @@ int main(int argc, char **argv)
     void *audio = NULL;
     if (aq) {
         audio = audio_open(adev);
-        if (!audio) fprintf(stderr, "audio output unavailable, audio is discarded\n");
+        if (!audio) {
+            hdmi_audio_set_output(0);
+            fprintf(stderr, "audio output unavailable, audio is discarded\n");
+        }
     }
 
     transport *tr = testfile ? transport_file_new(testfile, &g_stop) : transport_usb_new(&so);

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0 (in development)
+
+### Features — stage 1
+- Check the active HDMI display EDID for stereo LPCM at 48 kHz / 16 bit. Distinguish unsupported audio, unknown display capabilities, and an unavailable ALSA output.
+- Show a bilingual warning card at the top right of the video for eight seconds, and keep the warning visible while waiting for the console or game. Recheck on display reconnect and remove the warning when audio becomes available. Disabled with `--no-audio`, for offline replays, and for explicitly selected non-HDMI audio devices.
+
+### Tests
+- Added EDID parser tests (including damaged and truncated blocks), warning state and timer tests, and drawing bounds checks.
+
+
 ## 1.2.3
 
 ### Features

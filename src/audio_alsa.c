@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "hdmi_audio.h"
 #include <alsa/asoundlib.h>
 #include <errno.h>
 #include <stdio.h>
@@ -42,6 +43,7 @@ static void dev_close(aud *a)
 {
     if (a->pcm) snd_pcm_close(a->pcm);
     a->pcm = NULL;
+    hdmi_audio_set_output(0);
     a->retry_ns = now_ns() + 1000000000ull;
 }
 
@@ -51,9 +53,11 @@ static int ensure_open(aud *a)
     if (now_ns() < a->retry_ns) return -1;
     if (dev_open(a) == 0) {
         fprintf(stderr, "audio: %s opened\n", a->dev);
+        hdmi_audio_set_output(1);
         a->complained = 0;
         return 0;
     }
+    hdmi_audio_set_output(0);
     a->retry_ns = now_ns() + 1000000000ull;
     if (!a->complained) { fprintf(stderr, "audio: cannot open %s, will keep trying\n", a->dev); a->complained = 1; }
     return -1;

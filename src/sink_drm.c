@@ -1,6 +1,8 @@
 #define _GNU_SOURCE
 #include "sink.h"
 #include "status_led.h"
+#include "hdmi_audio.h"
+#include "hdmi_warning.h"
 #include "font.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -41,6 +43,10 @@ typedef struct {
     int exact;                   /* the mode has the size of the video */
     int scale;                   /* fit the picture to the display when the sizes differ (GPU path only) */
     int gone;                    /* the display is switched off or unplugged: nothing is drawn */
+    uint64_t audio_check_ns;
+    uint32_t audio_blob;
+    int audio_support;
+    hdmi_warning_timer audio_warning;
     uint64_t check_ns;           /* last time the connector was looked at */
     dbuf buf[2];
     int back, flip_pending, first;
@@ -132,6 +138,44 @@ static uint64_t now_ns(void)
     return t.tv_sec * 1000000000ull + t.tv_nsec;
 }
 
+/* Read the EDID attached to this exact DRM connector; no forced probes or modesets. */
+static void check_hdmi_audio(drm *d, const drmModeConnector *c, int force)
+{
+    if (!hdmi_audio_enabled()) return;
+    uint64_t now = now_ns();
+    if (!force && now - d->audio_check_ns < 1000000000ull) return;
+    d->audio_check_ns = now;
+    hdmi_audio_support support = HDMI_AUDIO_UNKNOWN;
+    uint32_t blob_id = 0;
+    if (c && c->connection == DRM_MODE_CONNECTED) {
+        for (int i = 0; i < c->count_props; i++) {
+            drmModePropertyRes *prop = drmModeGetProperty(d->fd, c->props[i]);
+            if (!prop) continue;
+            int edid = !strcmp(prop->name, "EDID") && (prop->flags & DRM_MODE_PROP_BLOB);
+            drmModeFreeProperty(prop);
+            if (!edid) continue;
+            blob_id = (uint32_t)c->prop_values[i];
+            drmModePropertyBlobRes *blob = blob_id ? drmModeGetPropertyBlob(d->fd, blob_id) : NULL;
+            if (blob) {
+                support = hdmi_audio_parse_edid(blob->data, blob->length);
+                drmModeFreePropertyBlob(blob);
+            }
+            break;
+        }
+    }
+    if (d->audio_blob != blob_id) {
+        d->audio_blob = blob_id;
+        d->audio_warning.previous = -1; /* New display, including another unsupported display. */
+    }
+    if (d->audio_support != (int)support) {
+        d->audio_support = support;
+        fprintf(stderr, "HDMI audio: %s\n", support == HDMI_AUDIO_SUPPORTED ? "display supports stereo LPCM 48 kHz / 16 bit" :
+                support == HDMI_AUDIO_UNSUPPORTED ? "display does not advertise stereo LPCM 48 kHz / 16 bit" :
+                "display audio capabilities unknown");
+    }
+    hdmi_audio_set_support(support);
+}
+
 /* An exact mode wins (highest refresh rate). Without one, the smallest mode that contains the video:
  * the picture is then shown 1:1 or scaled up as little as possible. SYSDVR_MODE=WxH forces a mode (testing). */
 static int choose_mode(const drmModeConnector *c, int vw, int vh, int *exact)
@@ -182,6 +226,7 @@ static int pick_display(drm *d, int vw, int vh, int quiet)
     d->mode = c->modes[choose_mode(c, vw, vh, &exact)];
     d->exact = exact;
     d->conn = c->connector_id;
+    check_hdmi_audio(d, c, 1);
     drmModeEncoder *e = c->encoder_id ? drmModeGetEncoder(d->fd, c->encoder_id) : NULL;
     d->crtc = e ? e->crtc_id : r->crtcs[0];
     if (e) drmModeFreeEncoder(e);
@@ -221,6 +266,7 @@ static int display_ok(drm *d, int vw, int vh)
     d->check_ns = t;
     drmModeConnector *c = drmModeGetConnectorCurrent(d->fd, d->conn);
     int connected = c && c->connection == DRM_MODE_CONNECTED;
+    check_hdmi_audio(d, c, 0);
     drmModeFreeConnector(c);
     if (!connected) {
         if (!d->gone) { fprintf(stderr, "drm: the display went away\n"); d->gone = 1; }
@@ -411,6 +457,9 @@ static void show_locked(sink *s, const frame *f)
 #endif
     convert(f, b, d->mode.hdisplay, d->mode.vdisplay);
 drawn:;
+    hdmi_warning warning = hdmi_audio_warning();
+    if (hdmi_audio_overlay_visible(&d->audio_warning, warning, now_ns()))
+        hdmi_warning_draw(b->map, d->mode.hdisplay, d->mode.vdisplay, b->pitch, warning);
     double c = now_ms();
     { static int cnt; const char *dump = getenv("SYSDVR_DUMP");
       if (dump && ++cnt == 60) {                  /* debugging aid: save what is being scanned out as raw XRGB */
@@ -467,6 +516,7 @@ static void resume(sink *s)
     if (d->idle) {
         drmSetMaster(d->fd);
         d->idle = 0;
+        d->audio_warning.previous = -1;
         d->first = 1;                         /* next frame sets the video mode again */
         int ow = d->mode.hdisplay, oh = d->mode.vdisplay;
         if (pick_display(d, d->vw, d->vh, 1)) d->gone = 1;               /* switched off meanwhile: display_ok() waits for it */
@@ -533,7 +583,10 @@ static void notice(sink *s, const notice_text *t, int count)
             uint32_t *line = (uint32_t *)(b->map + (size_t)y * b->pitch);
             for (int x = 0; x < W; x++) line[x] = 0x001C1C1C;
         }
-        int sc = H >= 1000 ? 2 : 1;                                  /* body scale; the first block has a bigger title */
+        d->audio_warning.previous = -1; /* The next game frame starts a fresh eight-second card. */
+        hdmi_warning warning = hdmi_audio_warning();
+        int reserved = warning == HDMI_WARNING_NONE ? 0 : (W >= 1920 && H >= 1000 ? 360 : 180);
+        int sc = H >= (warning == HDMI_WARNING_NONE ? 1000 : 1600) ? 2 : 1;                                  /* body scale; the first block has a bigger title */
         int lh = (FONT_CELL_H + 6) * sc;
         int total = 0;
         for (int k = 0; k < count; k++) {
@@ -541,8 +594,8 @@ static void notice(sink *s, const notice_text *t, int count)
             total += FONT_CELL_H * (k ? sc : 2 * sc) + 16 * sc + n * lh + (t[k].footer ? 12 * sc + FONT_CELL_H * sc : 0);
             if (k + 1 < count) total += 34 * sc;
         }
-        int y = (H - total) / 2;
-        if (y < 0) y = 0;
+        int y = reserved + (H - reserved - total) / 2;
+        if (y < reserved) y = reserved;
         for (int k = 0; k < count; k++) {
             int tsc = k ? sc : 2 * sc;
             uint32_t ct = k ? 0x00B4B4B4 : 0x00FFFFFF, cb = k ? 0x00909090 : 0x00D0D0D0, cf = k ? 0x002A9AB8 : 0x0032C8FF;
@@ -557,6 +610,7 @@ static void notice(sink *s, const notice_text *t, int count)
             }
             y += 34 * sc;
         }
+        hdmi_warning_draw(b->map, W, H, b->pitch, hdmi_audio_warning());
         const char *dump = getenv("SYSDVR_DUMP");
         if (dump) {                                                  /* debugging aid, like the dump of the 60th frame */
             char path[512]; snprintf(path, sizeof path, "%s.notice", dump);
@@ -581,6 +635,7 @@ static int present(sink *s)
     pthread_mutex_lock(&d->lock);
     drmModeConnector *c = drmModeGetConnectorCurrent(d->fd, d->conn);
     int ok = c && c->connection == DRM_MODE_CONNECTED;
+    check_hdmi_audio(d, c, 0);
     drmModeFreeConnector(c);
     pthread_mutex_unlock(&d->lock);
     return ok;
@@ -613,6 +668,7 @@ sink *sink_drm_new(const char *dev, int vw, int vh, int scale)
     drmSetMaster(d->fd);
     if (!quiet && !drmIsMaster(d->fd)) fprintf(stderr, "drm: this client is not the DRM master (another program has the display)\n");
     d->vw = vw; d->vh = vh; d->scale = scale;
+    d->audio_support = -1; d->audio_warning.previous = -1;
     if (pick_display(d, vw, vh, quiet)) { close(d->fd); free(d); return NULL; }
     fprintf(stderr, "drm: %s %dx%d@%d%s\n", dev ? dev : "/dev/dri/card0", d->mode.hdisplay, d->mode.vdisplay,
             d->mode.vrefresh, d->exact ? "" : scale ? " (no mode of the video's size, the picture is scaled to fit)"

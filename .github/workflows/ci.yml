@@ -37,6 +37,9 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
+      - name: HDMI audio detection and warning timers
+        run: ./build/hdmi-audio-test
+
       - name: Status LED transitions
         run: ./build/status-led-test
 
@@ -89,7 +92,10 @@ jobs:
       - name: Build with sanitizers
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined"
-          cmake --build build --target parse-test gen-h264
+          cmake --build build --target parse-test gen-h264 hdmi-audio-test
+
+      - name: HDMI audio parser and drawing under sanitizers
+        run: ./build/hdmi-audio-test
 
       - name: Hand-made cases and a damaged test stream
         run: |
