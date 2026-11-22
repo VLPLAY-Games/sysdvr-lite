@@ -62,16 +62,21 @@ void waiting_screen_draw(uint8_t *p,int W,int H,unsigned stride,const char *deco
         text(p,W,H,stride,x,y+94*sc,video,video_color,sc);
         const char *sound=audio_off?(ru?"Звук: отключён":"Audio: disabled"):
             (!hdmi_audio_output_available() && !hdmi_audio_enabled())?(ru?"Звук: аудиовыход недоступен":"Audio: output unavailable"):
-            warning==HDMI_WARNING_NONE?(ru?(hdmi_audio_enabled()?"Звук: HDMI доступен":"Звук: выбран отдельный аудиовыход"):
-                                          (hdmi_audio_enabled()?"Audio: HDMI available":"Audio: custom output selected")):
+            warning==HDMI_WARNING_NONE?(ru?(hdmi_audio_enabled()?"Дисплей поддерживает звук по HDMI":"Звук: выбран отдельный аудиовыход"):
+                                          (hdmi_audio_enabled()?"Display supports HDMI audio":"Audio: custom output selected")):
             hdmi_audio_message(warning,ru);
         text(p,W,H,stride,x,y+132*sc,sound,audio_color,sc);
+        if (!audio_off && hdmi_audio_enabled() && warning == HDMI_WARNING_NONE) {
+            const char *hint = ru ? "Звук может идти через динамики или разъём наушников дисплея."
+                                  : "Sound may play through speakers or the display's headphone output.";
+            text(p,W,H,stride,x,y+166*sc,hint,MUTED,sc);
+        }
         const char *line1=ru?(game_missing?"Откройте игру на консоли вместо HOME или системного окна.":"Запустите совместимую игру и подключите USB-кабель."):
                              (game_missing?"Return to your game from HOME or the system screen.":"Start a compatible game and connect the USB cable.");
         const char *line2=ru?(game_missing?"Если экран консоли не горит, нажмите питание два раза.":"На консоли должен быть включён SysDVR в режиме USB."):
                              (game_missing?"If the console screen is off, press Power twice.":"The Switch must be running SysDVR in USB mode.");
-        text(p,W,H,stride,x,y+190*sc,line1,ru?MUTED:SOFT,sc);
-        text(p,W,H,stride,x,y+228*sc,line2,ru?MUTED:SOFT,sc);
+        text(p,W,H,stride,x,y+204*sc,line1,ru?MUTED:SOFT,sc);
+        text(p,W,H,stride,x,y+240*sc,line2,ru?MUTED:SOFT,sc);
     }
     char footer[256];
     snprintf(footer,sizeof footer,"sysdvr-lite %s  |  Decoder: %s  |  %s",version,decoder?decoder:"none",gpu?"GPU conversion":"CPU conversion");
