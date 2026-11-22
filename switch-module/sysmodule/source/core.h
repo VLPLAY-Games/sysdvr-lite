@@ -9,7 +9,7 @@
 	#pragma error "UDP and file logging are mutually exclusive"
 #endif
 
-#define NEEDS_FS (!defined(USB_ONLY) || FILE_LOGGING)
+#define NEEDS_FS (!defined(USB_ONLY) || FILE_LOGGING || defined(SYSDVR_AUDIO_DIAGNOSTIC))
 #define NEEDS_SOCKETS (!defined(USB_ONLY) || UDP_LOGGING)
 
 #if LOGGING_ENABLED

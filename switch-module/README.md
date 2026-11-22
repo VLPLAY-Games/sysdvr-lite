@@ -48,3 +48,21 @@ on the path it was built in, so two builds of the same sources can differ by a f
 ## License
 GPL-2.0, like SysDVR and this repository. The sysmodule is [SysDVR](https://github.com/exelix11/SysDVR) by exelix11,
 upstream commit `804fd36`; only the files listed in the patch were changed. It is not affiliated with the SysDVR project.
+
+## Audio experiment (not part of the normal build)
+
+`./build.sh --audio-diagnostic` produces separate files in `dist/audio-diagnostic/`.
+This temporary USB-only build requests the headphone default output during a stream,
+saves and restores the previous default, and records route results, speaker/headphone
+volume and unmodified capture levels in `/sysdvr-audio-diag.txt` on the SD card.
+The file is appended across reboots and closed between writes so DBI/MTP can read it.
+PCM gain is deliberately disabled while measuring the console's behaviour.
+The `--keep-screen` client option lets the tester see the console's volume indicator.
+
+This is an unverified headphone-routing experiment, not a released volume-control
+feature. API success must be checked against the active/default target and hardware
+behaviour. `audctlSetDefaultTarget` is exposed by libnx and is also used for forced
+speaker output in [MasterVolume](https://github.com/averne/MasterVolume/blob/master/src/main.cpp).
+The original `SetOutputTarget` experiment returned success but left the active target
+at Speaker and the headphone volume unchanged on the test console.
+The normal `./build.sh` build does not enable any of this experimental behaviour.

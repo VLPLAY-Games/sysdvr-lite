@@ -3,6 +3,7 @@
 #include "../capture.h"
 #include "proto.h"
 #include "../core.h"
+#include "../audio_diag.h"
 
 static bool VideoConnected = false;
 static bool AudioConnected = false;
@@ -17,6 +18,7 @@ static bool ClientConnected()
 
 static void DisconnectClient() 
 {
+	AudioDiagEnd();
 	VideoConnected = false;
 	AudioConnected = false;
 	ProtoClientGlobalStateDisconnected();
@@ -51,6 +53,7 @@ static void USB_WatchdogThread(void*)
 	while (IsThreadRunning)
 	{
 		svcSleepThread(5E+8L);
+		AudioDiagPoll();
 
 		if (!ClientConnected() || !VideoConnected)
 			continue;
@@ -90,6 +93,7 @@ bool USB_ConnectClient()
 		return false;
 	}
 
+	if (res.RequestedAudio) AudioDiagBegin();
 	VideoConnected = res.RequestedVideo;
 	AudioConnected = res.RequestedAudio;
 
@@ -145,7 +149,7 @@ static void USB_AudioStreamThread(void*)
 		if (AudioConnected)
 		{
 			// Do not check for errors here, in case grc failed we will be sending the error packet
-			CaptureReadAudio();
+			if (CaptureReadAudio()) AudioDiagObserve(APkt.Data, APkt.Header.DataSize);
 			
 			if (!IsThreadRunning)
 				continue;
@@ -168,6 +172,7 @@ static void USB_Init()
 	VideoConnected = false;
 	AudioConnected = false;
 	mutexInit(&UsbMutex);
+	AudioDiagInit();
 
 	Result rc = UsbStreamingInitialize();
 	if (R_FAILED(rc)) 
@@ -179,6 +184,7 @@ static void USB_Init()
 static void USB_Exit()
 {
 	JoinThread(&WatchdogThread);
+	AudioDiagClose();
 
 	mutexLock(&UsbMutex);
 	VideoConnected = false;
