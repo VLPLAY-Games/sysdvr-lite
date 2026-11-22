@@ -48,6 +48,7 @@ void hdmi_audio_enable(int value) { atomic_store(&enabled, value); }
 int hdmi_audio_enabled(void) { return atomic_load(&enabled); }
 void hdmi_audio_set_support(hdmi_audio_support value) { atomic_store(&support, value); }
 void hdmi_audio_set_output(int available) { atomic_store(&output_ok, available); }
+int hdmi_audio_output_available(void) { return atomic_load(&output_ok); }
 hdmi_warning hdmi_audio_warning(void)
 {
     if (!atomic_load(&enabled)) return HDMI_WARNING_NONE;

@@ -108,6 +108,14 @@ typedef struct {
  * with the patched sysmodule in switch-module/ it lights up by itself. */
 static int g_notice = 1;
 static int g_banner = 1;
+static int g_wait_screen;
+static const char *g_wait_decoder = "none", *g_wait_audio = "off";
+
+static void show_waiting(int game_missing)
+{
+    if (g_sink && g_sink->waiting) g_sink->waiting(g_sink, g_wait_decoder, g_wait_audio, game_missing);
+    else banner_show();
+}
 static const notice_text NOTICE[2] = {
     { "Нет изображения от консоли",
       { "Игра не на экране: консоль показывает главное меню,", "выбор контроллеров или другое системное окно.",
@@ -123,6 +131,7 @@ static const notice_text NOTICE[2] = {
  * stays where it is and the dots grow to its right. */
 static void show_notice(int step)
 {
+    if (g_sink && g_sink->waiting) { show_waiting(1); return; }
     static const char *const DOTS[4] = { "   ", ".  ", ".. ", "..." };
     static char footer[2][64];
     notice_text t[2] = { NOTICE[0], NOTICE[1] };
@@ -147,13 +156,10 @@ static void *reader_thread(void *arg)
     uint8_t *payload = malloc(PKT_MAX_PAYLOAD);
     if (!payload) { fprintf(stderr, "out of memory\n"); g_exit_code = 1; g_stop = 1; return NULL; }
     int need_resume, waiting = 0, stalled = 0, dots = 0;
-    hdmi_warning previous_warning = hdmi_audio_warning();
     while (!g_stop) {
         watchdog_beat();
         int present = display_present();
-        hdmi_warning warning = hdmi_audio_warning();
-        if (g_banner && warning != previous_warning) banner_show();
-        previous_warning = warning;
+        if (g_wait_screen && present) show_waiting(0);
         if (!present) {          /* nothing to show it on: leave the console alone, its screen stays on */
             if (!waiting) { fprintf(stderr, "no display, not streaming until one is connected\n"); waiting = 1; }
             struct timespec ts = { 0, 500000000 };
@@ -197,6 +203,7 @@ static void *reader_thread(void *arg)
             if (!h.size) continue;
             if ((h.flags & META_VIDEO) && r->vq) {
                 last_video = now_ns();
+                if (stalled && g_sink && g_sink->resume) g_sink->resume(g_sink);
                 stalled = 0;                                /* the game is back: the next frame replaces the message */
                 if (need_resume) {                          /* picture is coming: take the display back */
                     if (g_sink && g_sink->resume) g_sink->resume(g_sink);
@@ -210,8 +217,11 @@ static void *reader_thread(void *arg)
         status_led_waiting();
         stalled = 0;
         fprintf(stderr, "stream lost, reconnecting\n");
-        if (g_sink && g_sink->idle) g_sink->idle(g_sink);      /* back to the terminal instead of a frozen frame */
-        if (g_banner) banner_show();
+        if (g_wait_screen && g_sink && g_sink->waiting) show_waiting(0);
+        else {
+            if (g_sink && g_sink->idle) g_sink->idle(g_sink);
+            if (g_banner) banner_show();
+        }
     }
 out:
     free(payload);
@@ -416,6 +426,7 @@ int main(int argc, char **argv)
     g_pktstat = getenv("SYSDVR_PKTSTAT") != NULL;
     fprintf(stderr, "sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
+    g_wait_screen = g_banner && use_drm && !testfile && !outfile;
     hdmi_audio_enable(use_drm && !no_audio && !testfile && !outfile && (!adev || strstr(adev, "HDMI")));
     watchdog_start(&g_stop);
     if (use_drm && !testfile && !outfile) status_led_start();
@@ -449,6 +460,9 @@ int main(int argc, char **argv)
         }
     }
 
+    g_wait_decoder = vq ? dopt.name : "none";
+    g_wait_audio = !aq ? "off" : audio ? (adev ? adev : "default") : "unavailable";
+
     transport *tr = testfile ? transport_file_new(testfile, &g_stop) : transport_usb_new(&so);
     if (!tr) { fprintf(stderr, "cannot start the transport\n"); return 1; }
 
@@ -463,7 +477,7 @@ int main(int argc, char **argv)
     for (int i = 0; vq && !g_warm && !g_stop && i < 1500; i++) { struct timespec ts = { 0, 20000000 }; nanosleep(&ts, NULL); }   /* up to 30 s */
     if (g_banner && !testfile && !outfile && use_drm) {
         banner_set(vq ? dopt.name : "none", !aq ? "off" : audio ? (adev ? adev : "default") : "unavailable");
-        banner_show();
+        show_waiting(0);
     }
     watchdog_armed();
     reader_thread(&rc);                              /* runs until SIGINT/SIGTERM */

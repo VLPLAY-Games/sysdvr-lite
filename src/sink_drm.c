@@ -3,6 +3,7 @@
 #include "status_led.h"
 #include "hdmi_audio.h"
 #include "hdmi_warning.h"
+#include "waiting_screen.h"
 #include "font.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -39,6 +40,8 @@ typedef struct {
     drmModeCrtc *saved;
     pthread_mutex_t lock;        /* show() runs in the decode thread, idle()/resume() in the reader thread */
     int idle;
+    int waiting, waiting_valid, waiting_game, waiting_warning;
+    char waiting_decoder[32], waiting_audio[128];
     int vw, vh;                  /* size of the video */
     int exact;                   /* the mode has the size of the video */
     int scale;                   /* fit the picture to the display when the sizes differ (GPU path only) */
@@ -164,6 +167,7 @@ static void check_hdmi_audio(drm *d, const drmModeConnector *c, int force)
         }
     }
     if (d->audio_blob != blob_id) {
+        d->waiting_valid = 0;
         d->audio_blob = blob_id;
         d->audio_warning.previous = -1; /* New display, including another unsupported display. */
     }
@@ -487,7 +491,10 @@ static void show(sink *s, const frame *f)
 {
     drm *d = s->priv;
     pthread_mutex_lock(&d->lock);
-    if (!d->idle && display_ok(d, d->vw, d->vh)) show_locked(s, f);    /* frames in flight after the stream ended are dropped */
+    if (!d->idle && !d->waiting && display_ok(d, d->vw, d->vh)) {
+        d->waiting_valid = 0;
+        show_locked(s, f);
+    }    /* frames in flight after the stream ended are dropped */
     pthread_mutex_unlock(&d->lock);
 }
 
@@ -513,6 +520,8 @@ static void resume(sink *s)
 {
     drm *d = s->priv;
     pthread_mutex_lock(&d->lock);
+    d->waiting = 0;
+    d->waiting_valid = 0;
     if (d->idle) {
         drmSetMaster(d->fd);
         d->idle = 0;
@@ -628,6 +637,41 @@ static void notice(sink *s, const notice_text *t, int count)
     pthread_mutex_unlock(&d->lock);
 }
 
+/* No render loop: a static framebuffer is scanned out by the display controller. */
+static void waiting_screen(sink *s, const char *decoder, const char *audio, int game_missing)
+{
+    drm *d = s->priv;
+    pthread_mutex_lock(&d->lock);
+    hdmi_warning warning = hdmi_audio_warning();
+    d->waiting = 1; /* Drop already queued game frames until resume(). */
+    if (!display_ok(d, d->vw, d->vh)) { d->waiting_valid = 0; goto out; }
+    if (d->waiting_valid && d->waiting_game == game_missing && d->waiting_warning == (int)warning &&
+        !strcmp(d->waiting_decoder, decoder) && !strcmp(d->waiting_audio, audio)) goto out;
+    if (d->idle) { drmSetMaster(d->fd); d->idle = 0; d->first = 1; }
+    wait_flip(d);
+    dbuf *b = &d->buf[d->back];
+    int gpu = 0;
+#ifdef HAVE_GL
+    gpu = d->gl_ok;
+#endif
+    waiting_screen_draw(b->map, d->mode.hdisplay, d->mode.vdisplay, b->pitch,
+                        decoder, audio, gpu, game_missing, warning, SYSDVR_VERSION);
+    if (d->first) { if (set_mode(d, b)) goto out; d->first = 0; }
+    else {
+        d->inflight_recv = 0;
+        if (drmModePageFlip(d->fd, d->crtc, b->fb, DRM_MODE_PAGE_FLIP_EVENT, d)) goto out;
+        d->flip_pending = 1;
+    }
+    d->back ^= 1;
+    d->waiting_valid = 1;
+    d->waiting_game = game_missing; d->waiting_warning = warning;
+    snprintf(d->waiting_decoder, sizeof d->waiting_decoder, "%s", decoder);
+    snprintf(d->waiting_audio, sizeof d->waiting_audio, "%s", audio);
+    d->audio_warning.previous = -1;
+out:
+    pthread_mutex_unlock(&d->lock);
+}
+
 /* Reader thread: is a display connected right now? */
 static int present(sink *s)
 {
@@ -678,6 +722,6 @@ sink *sink_drm_new(const char *dev, int vw, int vh, int scale)
     pthread_mutex_init(&d->lock, NULL);
     sink *s = calloc(1, sizeof *s);
     if (!s) { close(d->fd); free(d); return NULL; }
-    s->priv = d; s->show = show; s->idle = idle; s->resume = resume; s->present = present; s->notice = notice; s->warmup = warmup; s->close = cls;
+    s->priv = d; s->show = show; s->idle = idle; s->resume = resume; s->present = present; s->notice = notice; s->warmup = warmup; s->waiting = waiting_screen; s->close = cls;
     return s;
 }

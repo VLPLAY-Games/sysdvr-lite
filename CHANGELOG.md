@@ -3,6 +3,7 @@
 ## 1.3.0 (in development)
 
 ### Features — stage 1
+- Replaced the technical text-only waiting banner with a static graphical status screen: a complete English block followed by Russian, plain-language video/audio statuses with green/yellow/red/grey colours, and technical details in the footer. The screen redraws only when its state changes; game-waiting dots are replaced by the same static panel.
 - Check the active HDMI display EDID for stereo LPCM at 48 kHz / 16 bit. Distinguish unsupported audio, unknown display capabilities, and an unavailable ALSA output.
 - Show a bilingual warning card at the top right of the video for eight seconds, and keep the warning visible while waiting for the console or game. Recheck on display reconnect and remove the warning when audio becomes available. Disabled with `--no-audio`, for offline replays, and for explicitly selected non-HDMI audio devices.
 

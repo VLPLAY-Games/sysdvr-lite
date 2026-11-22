@@ -26,6 +26,8 @@ struct sink {
      * to be done in the thread that will draw, before the console is read. Done on the first frame otherwise,
      * which stalled the USB reading for that long and made the console drop the first session after every boot. */
     void (*warmup)(sink *s);
+    /* Static bilingual status screen; redraw only when its state changes. */
+    void (*waiting)(sink *s, const char *decoder, const char *audio, int game_missing);
     void (*close)(sink *s);
     void *priv;
 };

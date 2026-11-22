@@ -11,6 +11,7 @@ void hdmi_audio_enable(int enabled);
 int hdmi_audio_enabled(void);
 void hdmi_audio_set_support(hdmi_audio_support support);
 void hdmi_audio_set_output(int available);
+int hdmi_audio_output_available(void);
 hdmi_warning hdmi_audio_warning(void);
 const char *hdmi_audio_message(hdmi_warning warning, int russian);
 /* Per-display/session timer; a new warning gets eight seconds of video time. */

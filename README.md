@@ -321,6 +321,8 @@ docs/DESIGN.md       architecture and hardware notes
 README.ru.md         this file in Russian
 ```
 
+The waiting screen shows a complete English block followed by Russian. Video and audio statuses use plain language and colours; decoder names, audio device and version remain in the footer. It is a static framebuffer, redrawn only when the state changes, with no animation or rendering loop.
+
 ## HDMI audio warnings
 
 The client checks the connected display’s EDID for stereo LPCM at 48 kHz / 16 bit. If the display does not advertise this format, a warning appears at the top right of the video for eight seconds and stays visible while waiting for the console or game. Unknown or invalid display data and an unavailable ALSA output have separate messages. The warning clears when the condition recovers and is shown again for a new stream or display.
