@@ -56,7 +56,7 @@ void waiting_screen_draw(uint8_t *p,int W,int H,unsigned stride,const char *deco
         text(p,W,H,stride,x,y+14*sc,ru?"РУССКИЙ":"ENGLISH",MUTED,sc);
         const char *title=ru?(game_missing?"Ожидание игры":"Док готов. Подключите Switch"):
                               (game_missing?"Waiting for your game":"Dock ready. Connect your Switch");
-        text(p,W,H,stride,x,y+50*sc,title,ru?SOFT:WHITE,sc);
+        text(p,W,H,stride,x,y+50*sc,title,WHITE,sc);
         const char *video=ru?(hardware?"Изображение: аппаратное декодирование":software?"Изображение: программное декодирование":off?"Изображение: декодирование отключено":"Изображение: неизвестный декодер"):
                              (hardware?"Video: hardware decoding":software?"Video: software decoding":off?"Video: decoding disabled":"Video: unknown decoder");
         text(p,W,H,stride,x,y+94*sc,video,video_color,sc);
