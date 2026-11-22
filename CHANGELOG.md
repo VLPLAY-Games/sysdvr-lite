@@ -2,11 +2,14 @@
 
 ## 1.3.0 (in development)
 
-### Features — stage 1
+### Features
 - Choose English or Russian during installation (`--language en|ru`). Change the interface language later with `update.sh --language en|ru`, without downloading or rebuilding; ordinary updates preserve the setting. All waiting screens and HDMI warnings use the selected language, with English as the default.
 - Replaced the technical text-only waiting banner with a static graphical status screen: a single block in the selected language, plain-language video/audio statuses with green/yellow/red/grey colours, and technical details in the footer. The screen redraws only when its state changes; game-waiting dots are replaced by the same static panel.
 - Check the active HDMI display EDID for stereo LPCM at 48 kHz / 16 bit. Distinguish unsupported audio, unknown display capabilities, and an unavailable ALSA output.
 - Show a localized warning card at the top right of the video for eight seconds, and keep the warning visible while waiting for the console or game. Recheck on display reconnect and remove the warning when audio becomes available. Disabled with `--no-audio`, for offline replays, and for explicitly selected non-HDMI audio devices.
+
+### Switch module
+- Unchanged from 1.2.3. No headphone routing or volume-control changes; HDMI volume remains controlled by the display or connected audio device.
 
 ### Tests
 - Added EDID parser tests (including damaged and truncated blocks), warning state and timer tests, and drawing bounds checks.
