@@ -642,9 +642,9 @@ static void waiting_screen(sink *s, const char *decoder, const char *audio, int 
 {
     drm *d = s->priv;
     pthread_mutex_lock(&d->lock);
-    hdmi_warning warning = hdmi_audio_warning();
     d->waiting = 1; /* Drop already queued game frames until resume(). */
     if (!display_ok(d, d->vw, d->vh)) { d->waiting_valid = 0; goto out; }
+    hdmi_warning warning = hdmi_audio_warning();
     if (d->waiting_valid && d->waiting_game == game_missing && d->waiting_warning == (int)warning &&
         !strcmp(d->waiting_decoder, decoder) && !strcmp(d->waiting_audio, audio)) goto out;
     if (d->idle) { drmSetMaster(d->fd); d->idle = 0; d->first = 1; }
@@ -681,6 +681,15 @@ static int present(sink *s)
     int ok = c && c->connection == DRM_MODE_CONNECTED;
     check_hdmi_audio(d, c, 0);
     drmModeFreeConnector(c);
+    if (!ok) {
+        d->gone = 1;
+        d->waiting_valid = 0;
+    } else if (d->gone) {
+        /* Hotplug while idle also needs a fresh EDID read. GetConnectorCurrent only
+         * returns cached modes/properties; display_ok -> pick_display probes once. */
+        d->check_ns = 0;
+        ok = display_ok(d, d->vw, d->vh);
+    }
     pthread_mutex_unlock(&d->lock);
     return ok;
 }
