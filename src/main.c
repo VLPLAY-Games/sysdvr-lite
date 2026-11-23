@@ -249,7 +249,8 @@ static void *decode_thread(void *arg)
     c->dec->decode(c->dec, SYSDVR_SPS, sizeof SYSDVR_SPS, 0);
     c->dec->decode(c->dec, SYSDVR_PPS, sizeof SYSDVR_PPS, 0);
     unsigned long seen_drops = 0;
-    int need_idr = 0, failures = 0;
+    /* A connection can start mid-GOP: P-frames have no valid references yet. */
+    int need_idr = 1, failures = 0;
     while (pqueue_pop(c->q, &p) == 0) {
         /* A dropped P-frame corrupts everything up to the next keyframe: skip until one arrives */
         unsigned long dr = pqueue_dropped(c->q);
