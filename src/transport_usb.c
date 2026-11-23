@@ -1,5 +1,6 @@
 #include "transport.h"
 #include "watchdog.h"
+#include "usb_stream.h"
 #include <libusb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +15,8 @@ typedef struct {
     libusb_device_handle *h;
     uint8_t ep_in, ep_out;
     stream_opts opts;
-    uint8_t *buf;            /* one whole transfer: libusb can't read a packet in pieces */
+    uint8_t *buf;            /* handshake scratch buffer */
+    usb_stream stream;
     int hotplug;             /* the plug-in event is registered: waiting for the console wakes up as soon as it arrives */
 } usb_ctx;
 
@@ -67,6 +69,7 @@ static int usb_open(transport *t)
 {
     usb_ctx *u = t->priv;
     if (u->h) { libusb_close(u->h); u->h = NULL; }
+    u->stream.begin = u->stream.end = 0;
     for (int tries = 0; tries < 10 && !*u->opts.stop; tries++) {
         watchdog_beat();                                 /* waiting for the console is not a hang */
         u->h = libusb_open_device_with_vid_pid(u->ctx, VID, PID);
@@ -87,29 +90,36 @@ static int usb_open(transport *t)
 
 static int usb_next(transport *t, pkt_header *h, uint8_t *payload)
 {
-    usb_ctx *u = t->priv; int got = 0;
+    usb_ctx *u = t->priv;
     while (!*u->opts.stop) {
-        if (g_trace < 0) g_trace = getenv("SYSDVR_USBTRACE") != NULL;
-        double t0 = g_trace ? now_ms() : 0;
-        int r = libusb_bulk_transfer(u->h, u->ep_in, u->buf, PKT_MAX_TRANSFER, &got, 800);
-        if (g_trace) fprintf(stderr, "usbtrace %.0f: read took %.0f ms, rc %d, %d bytes\n", t0, now_ms() - t0, r, got);
-        if (r == LIBUSB_ERROR_TIMEOUT) {
-            if (got > 0) fprintf(stderr, "usb: a packet was cut by a timeout (%d bytes)\n", got);
-            return got > 0 ? 1 : 2;   /* 2: nothing came, the caller has things to check; a half packet is a broken stream */
-        }
-        if (!r && got == HELLO_SIZE && !hello_parse(u->buf, (uint8_t[2]){ 0 })) {
-            /* The console says hello again: it dropped this session (its hello is written in a loop until a
-             * client answers). Nothing more comes on it, the handshake has to be done again. */
+        int parsed = usb_stream_next(&u->stream, h, payload);
+        if (parsed == 1) return 0;
+        if (parsed == 2) {
             fprintf(stderr, "usb: the console says hello again, it has dropped this session\n");
             return 1;
         }
-        if (r || got < PKT_HDR_SIZE || pkt_parse_header(u->buf, h) || (int)h->size > got - PKT_HDR_SIZE) {
-            fprintf(stderr, "usb: bad packet (%s, %d bytes, size field %u)\n", r ? libusb_error_name(r) : "header or size",
-                    got, got >= 4 ? (unsigned)(u->buf[4] | u->buf[5] << 8 | u->buf[6] << 16 | (unsigned)u->buf[7] << 24) : 0u);
+        if (parsed < 0) {
+            fprintf(stderr, "usb: bad packet header\n");
             return 1;
         }
-        memcpy(payload, u->buf + PKT_HDR_SIZE, h->size);
-        return 0;
+        usb_stream_compact(&u->stream);
+        /* One incomplete logical packet plus one aligned bulk read fits. */
+        if (u->stream.end > PKT_MAX_TRANSFER) return 1;
+        if (g_trace < 0) g_trace = getenv("SYSDVR_USBTRACE") != NULL;
+        double t0 = g_trace ? now_ms() : 0;
+        int got = 0;
+        int r = libusb_bulk_transfer(u->h, u->ep_in,
+                                    u->stream.data + u->stream.end, USB_READ_SIZE, &got, 800);
+        if (g_trace) fprintf(stderr, "usbtrace %.0f: read took %.0f ms, rc %d, %d bytes\n", t0, now_ms() - t0, r, got);
+        if (r && r != LIBUSB_ERROR_TIMEOUT) {
+            fprintf(stderr, "usb: read failed (%s)\n", libusb_error_name(r));
+            return 1;
+        }
+        if (got < 0 || (size_t)got > USB_READ_SIZE) return 1;
+        u->stream.end += (size_t)got;
+        /* A timeout may still deliver complete packets. Preserve partial data
+         * across idle checks too; a timeout is not a protocol packet boundary. */
+        if (!got) return 2;
     }
     return -1;
 }
@@ -140,7 +150,7 @@ transport *transport_usb_new(const stream_opts *o)
         libusb_hotplug_register_callback(u->ctx, LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED, 0, VID, PID,
                                          LIBUSB_HOTPLUG_MATCH_ANY, on_arrived, NULL, NULL) == LIBUSB_SUCCESS)
         u->hotplug = 1;
-    u->buf = malloc(PKT_MAX_TRANSFER);
+    u->buf = malloc(512);
     transport *t = calloc(1, sizeof *t);
     if (!u->buf || !t) { free(u->buf); free(t); libusb_exit(u->ctx); free(u); return NULL; }
     t->priv = u; t->open = usb_open; t->next_packet = usb_next; t->close = usb_close; t->end = usb_end; t->destroy = usb_destroy;

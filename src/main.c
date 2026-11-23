@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "audio.h"
+#include "audio_sync.h"
 #include "decoder.h"
 #include "queue.h"
 #include "sink.h"
@@ -280,12 +281,18 @@ static void *audio_thread(void *arg)
     qpkt p;
     int dbg = getenv("SYSDVR_SYNC") != NULL;
     double sum = 0, mn = 1e9, mx = -1e9; unsigned n = 0, dropped = 0, padded = 0;
+    audio_sync timing = {0};
     while (pqueue_pop(c->q, &p) == 0) {
         int skip = 0;
+        int64_t delay = c->audio ? audio_delay_us(c->audio) : -1;
+        int can_sync = audio_sync_ready(&timing, p.h.timestamp, p.h.size, delay);
+        if (dbg && c->audio && !can_sync)
+            fprintf(stderr, "av sync: re-anchor audio ts %llu, delay %lld us (timestamp gap or unavailable playback clock)\n",
+                    (unsigned long long)p.h.timestamp, (long long)delay);
         uint64_t v = g_video_ts;
-        if (c->audio && v && now_ns() - g_video_host_ns < 500000000ull) {       /* ignore stale video clocks */
+        if (c->audio && can_sync && v && now_ns() - g_video_host_ns < 500000000ull) {       /* ignore stale video clocks */
             /* console timestamp of the sample that is audible right now, if this packet follows contiguously */
-            int64_t heard = (int64_t)p.h.timestamp - audio_delay_us(c->audio);
+            int64_t heard = (int64_t)p.h.timestamp - delay;
             int64_t skew = heard - (int64_t)v - g_av_offset_us;                 /* >0: audio ahead of the picture */
             if (dbg) {
                 double ms = skew / 1000.0; sum += ms; if (ms < mn) mn = ms; if (ms > mx) mx = ms;

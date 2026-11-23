@@ -101,7 +101,11 @@ int64_t audio_delay_us(void *h)
 {
     aud *a = h;
     snd_pcm_sframes_t d = 0;
-    if (!a->pcm || snd_pcm_delay(a->pcm, &d) < 0 || d < 0) return 0;
+    if (!a->pcm || snd_pcm_delay(a->pcm, &d) < 0 || d < 0) return -1;
+    snd_pcm_state_t state = snd_pcm_state(a->pcm);
+    /* Keep the existing startup behaviour (PREPARED, delay zero), but never
+     * interpret an underrun/suspend as a valid empty playback timeline. */
+    if (state != SND_PCM_STATE_RUNNING && state != SND_PCM_STATE_PREPARED) return -1;
     return (int64_t)d * 1000000 / 48000;
 }
 

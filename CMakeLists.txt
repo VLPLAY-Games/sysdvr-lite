@@ -80,6 +80,14 @@ add_executable(hdmi-audio-test tests/hdmi_audio_test.c src/hdmi_audio.c src/hdmi
 target_include_directories(hdmi-audio-test PRIVATE src)
 target_compile_options(hdmi-audio-test PRIVATE -UNDEBUG)
 
+add_executable(audio-sync-test tests/audio_sync_test.c)
+target_include_directories(audio-sync-test PRIVATE src)
+target_compile_options(audio-sync-test PRIVATE -UNDEBUG)
+
+add_executable(usb-stream-test tests/usb_stream_test.c src/proto.c)
+target_include_directories(usb-stream-test PRIVATE src)
+target_compile_options(usb-stream-test PRIVATE -UNDEBUG)
+
 install(TARGETS sysdvr-lite RUNTIME DESTINATION bin)
 
 message(STATUS "ffmpeg=${FFMPEG_FOUND} alsa=${ALSA_FOUND} drm=${DRM_FOUND} gl=${GL_FOUND}")
