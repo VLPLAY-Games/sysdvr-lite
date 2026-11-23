@@ -162,7 +162,7 @@ static void *reader_thread(void *arg)
     while (!g_stop) {
         watchdog_beat();
         int present = display_present();
-        if (g_wait_screen && present) show_waiting(0);
+        if (g_wait_screen && present) show_waiting(stalled);
         if (!present) {          /* nothing to show it on: leave the console alone, its screen stays on */
             if (!waiting) { fprintf(stderr, "no display, not streaming until one is connected\n"); waiting = 1; }
             struct timespec ts = { 0, 500000000 };
@@ -172,6 +172,8 @@ static void *reader_thread(void *arg)
         status_led_waiting();
         waiting = 0;
         if (r->tr->open(r->tr)) {          /* console not there yet: keep waiting, it may be plugged in later */
+            stalled = 0;
+            if (g_wait_screen && present) show_waiting(0);
             struct timespec ts = { 1, 0 };
             nanosleep(&ts, NULL);
             continue;
@@ -189,6 +191,7 @@ static void *reader_thread(void *arg)
                 if (gone >= 4) {                        /* for two seconds: not a replug, the display is gone */
                     fprintf(stderr, "the display is gone, ending the stream so that the console wakes up\n");
                     end_session(r->tr);
+                    stalled = 0;
                     break;
                 }
                 if (!stalled && t - last_video > STALL_NS) {
@@ -200,7 +203,15 @@ static void *reader_thread(void *arg)
             pkt_header h;
             int rc = r->tr->next_packet(r->tr, &h, payload);
             if (rc == 2) continue;
-            if (rc) { r->tr->close(r->tr); if (rc < 0) goto out; break; }
+            if (rc) {
+                r->tr->close(r->tr);
+                if (rc < 0) goto out;
+                /* A new hello after HOME is a session restart, not an unplug.
+                 * Keep the game-waiting panel until video resumes. Other errors
+                 * and a failed reopen return to the console-waiting panel. */
+                if (rc != 3) stalled = 0;
+                break;
+            }
             if (h.flags & META_ERROR) { fprintf(stderr, "console reported a capture error\n"); continue; }
             if (h.flags & META_REPLAY) continue;           /* we never enable NAL replay */
             if (!h.size) continue;
@@ -218,9 +229,8 @@ static void *reader_thread(void *arg)
             else if ((h.flags & META_AUDIO) && r->aq) { pqueue_push(r->aq, &h, payload); CNT(c_apk, 1); }
         }
         status_led_waiting();
-        stalled = 0;
         fprintf(stderr, "stream lost, reconnecting\n");
-        if (g_wait_screen && g_sink && g_sink->waiting) show_waiting(0);
+        if (g_wait_screen && g_sink && g_sink->waiting) show_waiting(stalled);
         else {
             if (g_sink && g_sink->idle) g_sink->idle(g_sink);
             if (g_banner) banner_show();

@@ -340,7 +340,13 @@ Each command only changes the language setting and restarts the service. Run an 
 
 The client checks the connected display’s EDID for stereo LPCM at 48 kHz / 16 bit. If the display does not advertise this format, a warning appears at the top right of the video for eight seconds and stays visible while waiting for the console or game. Unknown or invalid display data and an unavailable ALSA output have separate messages. The warning clears when the condition recovers and is shown again for a new stream or display.
 
-This checks advertised audio support, not the presence of speakers or the TV’s volume setting. `--no-audio`, offline replays, and explicitly selected non-HDMI audio devices disable these warnings. The Switch module is unchanged in 1.3.0; adjust HDMI volume on the display or connected audio device.
+This checks advertised audio support, not the presence of speakers or the TV’s volume setting. `--no-audio`, offline replays, and explicitly selected non-HDMI audio devices disable these warnings. The Switch module is unchanged in 1.3.x; adjust HDMI volume on the display or connected audio device.
+
+## Fix in 1.3.1
+
+Returning from HOME to a game now keeps the game-waiting screen during a streaming-session reconnect, instead of briefly showing “Dock ready. Connect your Switch”. Physically unplugging the console still shows the connection screen. This is a dock-side interface fix; the Switch module and audio buffer settings are unchanged.
+
+A 60-second hardware test processed 1,800 frames with no video queue drops, USB/ALSA errors or audio synchronization corrections. Average packet-to-display-submission processing was 7.06 ms, with 8.70% of one CPU core in use. See [CHANGELOG.md](CHANGELOG.md) for changes since 1.3.0.
 
 ## Fixes in 1.3.0
 
