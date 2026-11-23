@@ -53,20 +53,20 @@ void waiting_screen_draw(uint8_t *p,int W,int H,unsigned stride,const char *deco
     {
         int ru = ui_is_russian();
         int y=top, x=left+24*sc;
-        rect(p,W,H,stride,left,y+130*sc,panel_w,96*sc,PANEL);
-        rect(p,W,H,stride,left,y+130*sc,4*sc,96*sc,BLUE);
+        rect(p,W,H,stride,x,y+130*sc,panel_w-24*sc,96*sc,PANEL);
+        rect(p,W,H,stride,x,y+130*sc,4*sc,96*sc,BLUE);
         const char *title=ru?(game_missing?"Ожидание игры":"Док готов. Подключите Switch"):
                               (game_missing?"Waiting for your game":"Dock ready. Connect your Switch");
         text(p,W,H,stride,x,y,title,WHITE,2*sc);
         const char *video=ru?(hardware?"Аппаратное декодирование":software?"Программное декодирование":off?"Изображение: декодирование отключено":"Изображение: неизвестный декодер"):
                              (hardware?"Hardware video decoding":software?"Software video decoding":off?"Video: decoding disabled":"Video: unknown decoder");
-        text(p,W,H,stride,x,y+144*sc,video,video_color,sc);
+        text(p,W,H,stride,x+24*sc,y+144*sc,video,video_color,sc);
         const char *sound=audio_off?(ru?"Звук: отключён":"Audio: disabled"):
             (!hdmi_audio_output_available() && !hdmi_audio_enabled())?(ru?"Звук: аудиовыход недоступен":"Audio: output unavailable"):
             warning==HDMI_WARNING_NONE?(ru?(hdmi_audio_enabled()?"Звук по HDMI | динамики / наушники":"Звук: выбран отдельный аудиовыход"):
                                           (hdmi_audio_enabled()?"HDMI audio supported | speakers / headphones":"Audio: custom output selected")):
             hdmi_audio_message(warning,ru);
-        text(p,W,H,stride,x,y+182*sc,sound,audio_color,sc);
+        text(p,W,H,stride,x+24*sc,y+182*sc,sound,audio_color,sc);
         const char *instruction=ru?(game_missing?"Вернитесь в игру. Экран погас? Нажмите питание дважды.":
                                                                  "Запустите игру | Подключите USB | SysDVR в режиме USB"):
                                          (game_missing?"Return to your game. Screen off? Press Power twice.":

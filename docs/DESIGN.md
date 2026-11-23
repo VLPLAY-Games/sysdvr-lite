@@ -3,7 +3,7 @@
 ## Protocol (checked against the SysDVR source, not only protocol.md)
 
 - Packet header, 18 bytes little endian: magic `CCCCCCCC`, size u32, timestamp u64 (microseconds), flags u8, replay slot u8. Flags: bit0 video, bit1 audio, bit2 data, bit3 replay, bit4 multi-NAL, bit5 error. Maximum payload `0x54000`.
-- USB: VID `18D1` / PID `4EE0`, bulk endpoints, one multiplexed stream, each packet read as a single transfer. (The TCP bridge of the sysmodule is not supported by this client.)
+- USB: VID `18D1` / PID `4EE0`, bulk endpoints, one multiplexed stream, bulk reads are accumulated and parsed by the 18-byte logical header. A read may contain multiple packets or part of a packet; lengths divisible by the endpoint maximum packet size do not terminate a host read. `usb_stream.h` preserves trailing bytes and incomplete packets, including data returned with a timeout. Complete buffered packets are delivered without another USB read. (The TCP bridge of the sysmodule is not supported by this client.)
 - Handshake: the console sends `SysDVR|NN\0` (10 bytes), the client answers with a 16-byte request (`AAAAAAAA`, version, MetaFlags, VideoFlags, AudioBatching, FeatureFlags, 6 reserved), the console replies with a u32 result (6 = OK; 72 bytes for protocol 03).
 - Video is Annex-B H.264, 1280x720@30, with SPS/PPS injected by the console. NAL replay is not enabled.
 
@@ -17,7 +17,7 @@ transport (usb | test file) -> reader thread -> pqueue (drop oldest) -> decode t
 - `transport.h` hides the channel; `proto.c` is plain (de)serialization.
 - `decoder.h` is the backend interface (`null`, `ffmpeg`, `v4l2`). A frame may carry a dmabuf fd for zero-copy output.
 - `sink.h`: `null` (FPS), `file` (raw frames), `drm` (KMS + EGL).
-- The video queue is small (8 packets). When it overflows, the oldest packets are dropped and the decoder skips everything until the next IDR picture, because a dropped P-frame corrupts the rest of the GOP.
+- The video queue is small (8 packets). When it overflows, the oldest packets are dropped and the decoder skips everything until the next IDR picture, because a dropped P-frame corrupts the rest of the GOP. Startup also waits for the first IDR to avoid decoding with missing reference pictures.
 
 ## Native Cedrus decoder (`decoder_v4l2.c`, `h264_parse.c`)
 
@@ -47,3 +47,9 @@ Packets carry timestamps (microseconds) taken from the same console clock for bo
 ## Console stream properties
 
 Measured with `SYSDVR_H264_INFO=1`: High profile, level 3.2, 1 reference frame, POC type 2, CABAC with 8x8 transform, no weighted prediction, one slice per picture, IDR every 30 pictures, no B-frames, no MMCO, no reordering commands. The hardware decoder therefore needs none of the features it rejects.
+
+## Waiting screens and HDMI audio
+
+DRM waiting screens are cached static framebuffers, drawn on state changes in the selected `SYSDVR_LANGUAGE` (`en` by default, or `ru`). The video and audio status panel is aligned with the heading; technical details stay in the footer. The active connector EDID is checked for stereo LPCM 48 kHz / 16 bit. An unsupported/unknown capability or unavailable output appears persistently while waiting, and as an eight-second card over a new video stream. This is advertised format support, not speaker detection or a volume check. Explicit non-HDMI audio outputs and disabled audio/offline replay suppress HDMI warnings.
+
+The audio sync guard tracks expected packet end timestamps. A discontinuity over 2 ms or an unavailable ALSA clock suppresses correction for that packet, without changing PCM or timestamps. The next contiguous packet can synchronize normally. ALSA buffer size and the default batching/offset are unchanged in 1.3.0.

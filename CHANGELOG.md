@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0 (in development)
+## 1.3.0 (2026-11-23)
 
 ### Features
 - Choose English or Russian during installation (`--language en|ru`). Change the interface language later with `update.sh --language en|ru`, without downloading or rebuilding; ordinary updates preserve the setting. All waiting screens and HDMI warnings use the selected language, with English as the default.
@@ -8,11 +8,19 @@
 - Check the active HDMI display EDID for stereo LPCM at 48 kHz / 16 bit. Distinguish unsupported audio, unknown display capabilities, and an unavailable ALSA output.
 - Show a localized warning card at the top right of the video for eight seconds, and keep the warning visible while waiting for the console or game. Recheck on display reconnect and remove the warning when audio becomes available. Disabled with `--no-audio`, for offline replays, and for explicitly selected non-HDMI audio devices.
 
+### Fixes
+- USB reads now preserve all logical SysDVR packets, including audio following a video transfer whose size is a multiple of 512 bytes. The old reader discarded trailing packets, causing occasional audio clicks or brief pauses. Partial packets are retained across reads; ALSA buffer size, audio batching and A/V offset are unchanged.
+- A/V synchronization no longer treats an unavailable ALSA playback clock as zero delay, or applies a correction to a packet immediately after an audio timestamp discontinuity.
+- Wait for the first keyframe before decoding at startup, preventing green frames on the first Switch connection after boot.
+- Align the waiting-screen status panel with the heading and indent its video/audio text consistently on both waiting screens.
+
 ### Switch module
 - Unchanged from 1.2.3. No headphone routing or volume-control changes; HDMI volume remains controlled by the display or connected audio device.
 
 ### Tests
-- Added EDID parser tests (including damaged and truncated blocks), warning state and timer tests, and drawing bounds checks.
+- Added EDID parser tests (including damaged and truncated blocks), warning state and timer tests, drawing bounds checks, and language configuration tests.
+- Added USB stream regression tests for combined/split packets, all five video sizes observed during the audio investigation, maximum payloads, reconnect greetings and malformed headers; USB tests also run under ASan/UBSan in CI. Added audio clock/discontinuity tests.
+- A two-minute hardware test processed 3,600 frames with no video queue drops, ALSA write errors or audio synchronization corrections. Mean packet-to-display-submission processing was 7.08 ms, CPU use 8.76% of one core. A separate 87-second audio capture had no timestamp gaps and identical input/output PCM; the listener reported no defects. These are dock-side measurements, not end-to-end input latency.
 
 
 ## 1.2.3
