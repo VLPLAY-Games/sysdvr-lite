@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "audio.h"
+#include "audio_sync.h"
 #include "decoder.h"
 #include "queue.h"
 #include "sink.h"
@@ -7,6 +8,8 @@
 #include "banner.h"
 #include "watchdog.h"
 #include "status_led.h"
+#include "hdmi_audio.h"
+#include "ui_language.h"
 #include <dirent.h>
 #include <getopt.h>
 #include <pthread.h>
@@ -107,6 +110,14 @@ typedef struct {
  * with the patched sysmodule in switch-module/ it lights up by itself. */
 static int g_notice = 1;
 static int g_banner = 1;
+static int g_wait_screen;
+static const char *g_wait_decoder = "none", *g_wait_audio = "off";
+
+static void show_waiting(int game_missing)
+{
+    if (g_sink && g_sink->waiting) g_sink->waiting(g_sink, g_wait_decoder, g_wait_audio, game_missing);
+    else banner_show();
+}
 static const notice_text NOTICE[2] = {
     { "Нет изображения от консоли",
       { "Игра не на экране: консоль показывает главное меню,", "выбор контроллеров или другое системное окно.",
@@ -122,6 +133,7 @@ static const notice_text NOTICE[2] = {
  * stays where it is and the dots grow to its right. */
 static void show_notice(int step)
 {
+    if (g_sink && g_sink->waiting) { show_waiting(1); return; }
     static const char *const DOTS[4] = { "   ", ".  ", ".. ", "..." };
     static char footer[2][64];
     notice_text t[2] = { NOTICE[0], NOTICE[1] };
@@ -129,7 +141,8 @@ static void show_notice(int step)
         snprintf(footer[i], sizeof footer[i], "%s%s", NOTICE[i].footer, DOTS[step & 3]);
         t[i].footer = footer[i];
     }
-    g_sink->notice(g_sink, t, 2);
+    int selected = ui_is_russian() ? 0 : 1;
+    g_sink->notice(g_sink, &t[selected], 1);
 }
 
 #define STALL_NS 3000000000ull      /* no video for this long: the game is not on the screen (HOME, a system window...) */
@@ -148,7 +161,9 @@ static void *reader_thread(void *arg)
     int need_resume, waiting = 0, stalled = 0, dots = 0;
     while (!g_stop) {
         watchdog_beat();
-        if (!display_present()) {          /* nothing to show it on: leave the console alone, its screen stays on */
+        int present = display_present();
+        if (g_wait_screen && present) show_waiting(0);
+        if (!present) {          /* nothing to show it on: leave the console alone, its screen stays on */
             if (!waiting) { fprintf(stderr, "no display, not streaming until one is connected\n"); waiting = 1; }
             struct timespec ts = { 0, 500000000 };
             nanosleep(&ts, NULL);
@@ -191,6 +206,7 @@ static void *reader_thread(void *arg)
             if (!h.size) continue;
             if ((h.flags & META_VIDEO) && r->vq) {
                 last_video = now_ns();
+                if (stalled && g_sink && g_sink->resume) g_sink->resume(g_sink);
                 stalled = 0;                                /* the game is back: the next frame replaces the message */
                 if (need_resume) {                          /* picture is coming: take the display back */
                     if (g_sink && g_sink->resume) g_sink->resume(g_sink);
@@ -204,8 +220,11 @@ static void *reader_thread(void *arg)
         status_led_waiting();
         stalled = 0;
         fprintf(stderr, "stream lost, reconnecting\n");
-        if (g_sink && g_sink->idle) g_sink->idle(g_sink);      /* back to the terminal instead of a frozen frame */
-        if (g_banner) banner_show();
+        if (g_wait_screen && g_sink && g_sink->waiting) show_waiting(0);
+        else {
+            if (g_sink && g_sink->idle) g_sink->idle(g_sink);
+            if (g_banner) banner_show();
+        }
     }
 out:
     free(payload);
@@ -231,7 +250,8 @@ static void *decode_thread(void *arg)
     c->dec->decode(c->dec, SYSDVR_SPS, sizeof SYSDVR_SPS, 0);
     c->dec->decode(c->dec, SYSDVR_PPS, sizeof SYSDVR_PPS, 0);
     unsigned long seen_drops = 0;
-    int need_idr = 0, failures = 0;
+    /* A connection can start mid-GOP: P-frames have no valid references yet. */
+    int need_idr = 1, failures = 0;
     while (pqueue_pop(c->q, &p) == 0) {
         /* A dropped P-frame corrupts everything up to the next keyframe: skip until one arrives */
         unsigned long dr = pqueue_dropped(c->q);
@@ -261,12 +281,18 @@ static void *audio_thread(void *arg)
     qpkt p;
     int dbg = getenv("SYSDVR_SYNC") != NULL;
     double sum = 0, mn = 1e9, mx = -1e9; unsigned n = 0, dropped = 0, padded = 0;
+    audio_sync timing = {0};
     while (pqueue_pop(c->q, &p) == 0) {
         int skip = 0;
+        int64_t delay = c->audio ? audio_delay_us(c->audio) : -1;
+        int can_sync = audio_sync_ready(&timing, p.h.timestamp, p.h.size, delay);
+        if (dbg && c->audio && !can_sync)
+            fprintf(stderr, "av sync: re-anchor audio ts %llu, delay %lld us (timestamp gap or unavailable playback clock)\n",
+                    (unsigned long long)p.h.timestamp, (long long)delay);
         uint64_t v = g_video_ts;
-        if (c->audio && v && now_ns() - g_video_host_ns < 500000000ull) {       /* ignore stale video clocks */
+        if (c->audio && can_sync && v && now_ns() - g_video_host_ns < 500000000ull) {       /* ignore stale video clocks */
             /* console timestamp of the sample that is audible right now, if this packet follows contiguously */
-            int64_t heard = (int64_t)p.h.timestamp - audio_delay_us(c->audio);
+            int64_t heard = (int64_t)p.h.timestamp - delay;
             int64_t skew = heard - (int64_t)v - g_av_offset_us;                 /* >0: audio ahead of the picture */
             if (dbg) {
                 double ms = skew / 1000.0; sum += ms; if (ms < mn) mn = ms; if (ms > mx) mx = ms;
@@ -363,6 +389,7 @@ static void usage(const char *a)
 
 int main(int argc, char **argv)
 {
+    ui_language_init();
     const char *outfile = NULL, *adev = NULL, *drmdev = NULL, *testfile = NULL;
     int use_drm = 0, no_audio = 0, no_video = 0, scale = 1;
     int screen_off = 1;       /* turn the console screen off while streaming, the sysmodule restores it on disconnect */
@@ -410,6 +437,8 @@ int main(int argc, char **argv)
     g_pktstat = getenv("SYSDVR_PKTSTAT") != NULL;
     fprintf(stderr, "sysdvr-lite %s%s%s%s\n", SYSDVR_VERSION, SYSDVR_GIT[0] ? " (" : "", SYSDVR_GIT, SYSDVR_GIT[0] ? ")" : "");
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
+    g_wait_screen = g_banner && use_drm && !testfile && !outfile;
+    hdmi_audio_enable(use_drm && !no_audio && !testfile && !outfile && (!adev || strstr(adev, "HDMI")));
     watchdog_start(&g_stop);
     if (use_drm && !testfile && !outfile) status_led_start();
 
@@ -436,8 +465,14 @@ int main(int argc, char **argv)
     void *audio = NULL;
     if (aq) {
         audio = audio_open(adev);
-        if (!audio) fprintf(stderr, "audio output unavailable, audio is discarded\n");
+        if (!audio) {
+            hdmi_audio_set_output(0);
+            fprintf(stderr, "audio output unavailable, audio is discarded\n");
+        }
     }
+
+    g_wait_decoder = vq ? dopt.name : "none";
+    g_wait_audio = !aq ? "off" : audio ? (adev ? adev : "default") : "unavailable";
 
     transport *tr = testfile ? transport_file_new(testfile, &g_stop) : transport_usb_new(&so);
     if (!tr) { fprintf(stderr, "cannot start the transport\n"); return 1; }
@@ -453,7 +488,7 @@ int main(int argc, char **argv)
     for (int i = 0; vq && !g_warm && !g_stop && i < 1500; i++) { struct timespec ts = { 0, 20000000 }; nanosleep(&ts, NULL); }   /* up to 30 s */
     if (g_banner && !testfile && !outfile && use_drm) {
         banner_set(vq ? dopt.name : "none", !aq ? "off" : audio ? (adev ? adev : "default") : "unavailable");
-        banner_show();
+        show_waiting(0);
     }
     watchdog_armed();
     reader_thread(&rc);                              /* runs until SIGINT/SIGTERM */

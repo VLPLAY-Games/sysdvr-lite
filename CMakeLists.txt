@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(sysdvr_lite VERSION 1.2.3 LANGUAGES C)
+project(sysdvr_lite VERSION 1.3.0 LANGUAGES C)
 
 # The client targets the Orange Pi Zero 2W (Allwinner H618): arm64 Linux only.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
@@ -25,7 +25,7 @@ pkg_check_modules(DRM    IMPORTED_TARGET libdrm)
 add_executable(sysdvr-lite
   src/main.c src/proto.c src/transport_usb.c src/transport_file.c src/queue.c
   src/decoder_null.c src/decoder_v4l2.c src/h264_parse.c
-  src/sink_file.c src/sink_null.c src/watchdog.c src/banner.c src/status_led.c)
+  src/sink_file.c src/sink_null.c src/watchdog.c src/banner.c src/status_led.c src/hdmi_audio.c src/ui_language.c)
 target_link_libraries(sysdvr-lite Threads::Threads PkgConfig::LIBUSB)
 
 # Version: the release number, plus `git describe` when built from a checkout (re-read on every configure)
@@ -48,7 +48,7 @@ if(ALSA_FOUND)
   target_compile_definitions(sysdvr-lite PRIVATE HAVE_ALSA)
 endif()
 if(DRM_FOUND)
-  target_sources(sysdvr-lite PRIVATE src/sink_drm.c src/font.c)
+  target_sources(sysdvr-lite PRIVATE src/sink_drm.c src/font.c src/hdmi_warning.c src/waiting_screen.c)
   target_link_libraries(sysdvr-lite PkgConfig::DRM)
   target_compile_definitions(sysdvr-lite PRIVATE HAVE_DRM)
   # GPU colour conversion + zero-copy scanout needs EGL/GLES2/GBM (mesa)
@@ -75,6 +75,18 @@ add_executable(status-led-test tests/status_led_test.c)
 target_link_libraries(status-led-test Threads::Threads)
 # Keep assertions active in the test even in Release builds.
 target_compile_options(status-led-test PRIVATE -UNDEBUG)
+
+add_executable(hdmi-audio-test tests/hdmi_audio_test.c src/hdmi_audio.c src/hdmi_warning.c src/font.c src/ui_language.c)
+target_include_directories(hdmi-audio-test PRIVATE src)
+target_compile_options(hdmi-audio-test PRIVATE -UNDEBUG)
+
+add_executable(audio-sync-test tests/audio_sync_test.c)
+target_include_directories(audio-sync-test PRIVATE src)
+target_compile_options(audio-sync-test PRIVATE -UNDEBUG)
+
+add_executable(usb-stream-test tests/usb_stream_test.c src/proto.c)
+target_include_directories(usb-stream-test PRIVATE src)
+target_compile_options(usb-stream-test PRIVATE -UNDEBUG)
 
 install(TARGETS sysdvr-lite RUNTIME DESTINATION bin)
 

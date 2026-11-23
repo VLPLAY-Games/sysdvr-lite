@@ -18,6 +18,8 @@ jobs:
         run: shellcheck -x -S warning install.sh update.sh tools/*.sh switch-module/build.sh
       - name: bash syntax
         run: for f in install.sh update.sh tools/*.sh switch-module/build.sh; do bash -n "$f"; done
+      - name: Language configuration
+        run: bash tests/language_test.sh
       - name: python syntax
         run: python3 -m py_compile tools/*.py
 
@@ -36,6 +38,15 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build
+
+      - name: HDMI audio detection and warning timers
+        run: ./build/hdmi-audio-test
+
+      - name: Audio synchronization across timestamp gaps
+        run: ./build/audio-sync-test
+
+      - name: USB stream boundaries
+        run: ./build/usb-stream-test
 
       - name: Status LED transitions
         run: ./build/status-led-test
@@ -89,7 +100,13 @@ jobs:
       - name: Build with sanitizers
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined"
-          cmake --build build --target parse-test gen-h264
+          cmake --build build --target parse-test gen-h264 hdmi-audio-test usb-stream-test
+
+      - name: USB stream boundaries under sanitizers
+        run: ./build/usb-stream-test
+
+      - name: HDMI audio parser and drawing under sanitizers
+        run: ./build/hdmi-audio-test
 
       - name: Hand-made cases and a damaged test stream
         run: |

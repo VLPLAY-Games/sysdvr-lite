@@ -21,6 +21,7 @@
 #                                nothing before the stream, e.g. --video-mode 1280x720; "off" removes it again
 #   --binary                     install the prebuilt binary of the latest release instead of building it (Debian 13)
 #   --force                      try another arm64 board or distro (Debian based): skips the Orange Pi Zero 2W check
+#   --language en|ru             interface language (asked on first interactive install, default en)
 #   --yes, -y                    do not ask for confirmation (required when there is no terminal)
 
 # The whole script is one function: bash must read it completely before running anything, otherwise
@@ -32,6 +33,7 @@ AUDIO_DEVICE="plughw:CARD=HDMI,DEV=0"
 DECODER="v4l2"
 SET_CMA=1
 VIDEO_MODE=""             # --video-mode: kernel video= parameter, or "off"
+INTERFACE_LANGUAGE=""
 ASSUME_YES=0
 FORCE=0
 BINARY=0                  # prebuilt binary instead of a build on the board
@@ -54,6 +56,7 @@ usage() {
 
 while [ $# -gt 0 ]; do
     case "$1" in
+        --language) INTERFACE_LANGUAGE="${2:?missing value}"; shift 2 ;;
         --audio-device) AUDIO_DEVICE="${2:?missing value}"; OPTS_GIVEN=1; shift 2 ;;
         --decoder)      DECODER="${2:?missing value}"; OPTS_GIVEN=1; shift 2 ;;
         --stock-sysdvr) NOTICE_OPT=" --no-notice"; OPTS_GIVEN=1; shift ;;
@@ -71,6 +74,7 @@ done
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"
 [ "$(findmnt -no FSTYPE / 2>/dev/null)" != overlay ] || die "the read-only root is on (tools/readonly-root.sh): nothing written now would survive a reboot. Run: sudo /opt/sysdvr-lite/tools/readonly-root.sh disable, reboot, run this again, then enable it and reboot"
+[ -z "$INTERFACE_LANGUAGE" ] || [ "$INTERFACE_LANGUAGE" = en ] || [ "$INTERFACE_LANGUAGE" = ru ] || die "--language must be en or ru"
 [ "$DECODER" = v4l2 ] || [ "$DECODER" = ffmpeg ] || die "--decoder must be v4l2 or ffmpeg"
 if [ -n "$VIDEO_MODE" ] && [ "$VIDEO_MODE" != off ]; then
     [[ "$VIDEO_MODE" =~ ^[0-9]{3,4}x[0-9]{3,4}(@[0-9]{2,3})?$ ]] || die "--video-mode must look like 1280x720 or 1920x1080@60, or be off"
@@ -156,6 +160,25 @@ if [ -z "$HERE" ]; then
     HERE="$INSTALL_DIR"
 fi
 echo "Source: $HERE ($(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo 'not a git checkout'))"
+
+# shellcheck source=tools/language.sh
+. "$HERE/tools/language.sh"
+if [ -z "$INTERFACE_LANGUAGE" ]; then
+    INTERFACE_LANGUAGE="$(sysdvr_get_language "$OPTS_FILE")"
+    if ! grep -q '^SYSDVR_LANGUAGE=' "$OPTS_FILE" 2>/dev/null && [ "$ASSUME_YES" -eq 0 ]; then
+        echo 'Interface language / Язык интерфейса:'
+        echo '  1) English'
+        echo '  2) Русский'
+        while true; do
+            read -r -p 'Select [1]: ' language_answer </dev/tty || language_answer=1
+            case "$language_answer" in
+                ''|1|en) INTERFACE_LANGUAGE=en; break ;;
+                2|ru) INTERFACE_LANGUAGE=ru; break ;;
+                *) echo 'Choose 1 (en) or 2 (ru).' ;;
+            esac
+        done
+    fi
+fi
 
 # ---- packages -------------------------------------------------------------------------------
 step "Installing packages"
@@ -247,6 +270,7 @@ OPTS
 else
     echo "keeping the options in $OPTS_FILE"
 fi
+sysdvr_set_language "$OPTS_FILE" "$INTERFACE_LANGUAGE"
 install -m 644 "$HERE/tools/sysdvr-lite.service" /etc/systemd/system/sysdvr-lite.service
 EXEC="$PREFIX/bin/sysdvr-lite $(sed -n 's/^SYSDVR_OPTS="\(.*\)"$/\1/p' "$OPTS_FILE")"
 systemctl daemon-reload

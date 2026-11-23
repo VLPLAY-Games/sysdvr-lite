@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "hdmi_audio.h"
 #include <alsa/asoundlib.h>
 #include <errno.h>
 #include <stdio.h>
@@ -42,6 +43,7 @@ static void dev_close(aud *a)
 {
     if (a->pcm) snd_pcm_close(a->pcm);
     a->pcm = NULL;
+    hdmi_audio_set_output(0);
     a->retry_ns = now_ns() + 1000000000ull;
 }
 
@@ -51,9 +53,11 @@ static int ensure_open(aud *a)
     if (now_ns() < a->retry_ns) return -1;
     if (dev_open(a) == 0) {
         fprintf(stderr, "audio: %s opened\n", a->dev);
+        hdmi_audio_set_output(1);
         a->complained = 0;
         return 0;
     }
+    hdmi_audio_set_output(0);
     a->retry_ns = now_ns() + 1000000000ull;
     if (!a->complained) { fprintf(stderr, "audio: cannot open %s, will keep trying\n", a->dev); a->complained = 1; }
     return -1;
@@ -97,7 +101,11 @@ int64_t audio_delay_us(void *h)
 {
     aud *a = h;
     snd_pcm_sframes_t d = 0;
-    if (!a->pcm || snd_pcm_delay(a->pcm, &d) < 0 || d < 0) return 0;
+    if (!a->pcm || snd_pcm_delay(a->pcm, &d) < 0 || d < 0) return -1;
+    snd_pcm_state_t state = snd_pcm_state(a->pcm);
+    /* Keep the existing startup behaviour (PREPARED, delay zero), but never
+     * interpret an underrun/suspend as a valid empty playback timeline. */
+    if (state != SND_PCM_STATE_RUNNING && state != SND_PCM_STATE_PREPARED) return -1;
     return (int64_t)d * 1000000 / 48000;
 }
 

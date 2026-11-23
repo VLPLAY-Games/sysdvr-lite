@@ -24,10 +24,10 @@ The official client is a .NET application with an ImGui/SDL front end. On an Ora
 - Output without a window system: KMS/DRM with the display mode matched to the video, never scaled. Frames are imported as dmabuf into EGL/GLES and converted to RGB on the GPU straight into the scanout buffer. Falls back to a CPU conversion when no GPU stack is available.
 - Audio over ALSA (48 kHz stereo S16) with A/V synchronization: both streams carry console timestamps, the audio follows the picture. Video is never delayed.
 - The console screen is turned off while the client is connected and turned back on when it disconnects (the SysDVR sysmodule does this on request of the client, protocol 03). Disable with `--keep-screen`.
-- When the console is unplugged, the display goes back to the terminal (no frozen last frame) and the picture returns when it is plugged in again.
-- After the boot the text console shows, in English and Russian, that everything is running and the Switch can be connected (`--no-banner` turns it off). A watchdog restarts the client when it hangs, not only when it crashes.
+- When the console is unplugged, a static waiting screen replaces the picture. It shows connection instructions, video/audio status and technical details; the picture returns automatically on reconnect.
+- Waiting screens and HDMI audio warnings use one selected language: English by default, or Russian. Choose during installation or change it later without rebuilding. `--no-banner` disables the console-waiting screen. A watchdog restarts the client when it hangs, not only when it crashes.
 - Survives hiccups of the display and the sound: if the TV is switched off or the HDMI cable is replugged the picture comes back by itself, the program waits for a display that is not there yet, and the sound output is opened again when it becomes available (for example when the HDMI sound card was not ready at boot).
-- When the console sends no video for three seconds (the game left the screen: HOME menu, a controller prompt, a system window) a message is drawn on the display instead of a frozen picture, in Russian with an English copy under it. With the patched sysmodule from [switch-module](switch-module/README.md) the console screen then lights up by itself (and goes dark again when the game is back); with the stock SysDVR it stays off and the message says to press the console's power button twice (sleep and wake). The picture returns by itself when the game does. `--no-notice` turns the message off.
+- When the console sends no video for three seconds (the game left the screen: HOME menu, a controller prompt, a system window) a static game-waiting screen is drawn in the selected language instead of a frozen picture. With the patched sysmodule from [switch-module](switch-module/README.md) the console screen then lights up by itself (and goes dark again when the game is back); with the stock SysDVR it stays off and the message says to press the console's power button twice (sleep and wake). The picture returns by itself when the game does. `--no-notice` turns the message off.
 - Fits the picture to displays that have no 1280x720 mode (`--scale fit`, the default; `--scale none` centers it 1:1).
 - Low-latency queues: when the decoder falls behind, old packets are dropped and decoding resumes at the next keyframe.
 - arm64 Linux only (the build refuses to configure on anything else).
@@ -123,7 +123,7 @@ The board needs internet access during the install. The script:
 6. builds the client and installs it to `/usr/local/bin`,
 7. creates and enables the `sysdvr-lite` systemd service, so it starts at boot and waits for the Switch.
 
-If the CMA size changed, the script tells you to reboot (`sudo reboot`). After that the service starts by itself at every boot: with SysDVR in USB mode on the console, plug it in and the picture appears on the HDMI display, no keyboard needed. Unplugging the console returns the display to the terminal, plugging it in again brings the picture back.
+If the CMA size changed, the script tells you to reboot (`sudo reboot`). After that the service starts by itself at every boot: with SysDVR in USB mode on the console, plug it in and the picture appears on the HDMI display, no keyboard needed. Unplugging the console shows the waiting screen; plugging it in again brings the picture back.
 
 Verify the installation:
 
@@ -133,7 +133,7 @@ grep Cma /proc/meminfo                          # CmaTotal: 131072 kB
 journalctl -u sysdvr-lite -n 20 --no-pager      # cedrus / Mali-G31 / GPU conversion enabled
 ```
 
-Options: `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--dir PATH` (where to clone when run through curl, default `/opt/sysdvr-lite`), `--stock-sysdvr` (the console has the stock SysDVR: no message window, as in 1.0), `--no-cma`, `--video-mode WxH[@HZ]` (make the kernel use this display mode from boot, `off` removes it; see Troubleshooting), `--binary` (install the prebuilt binary of the latest release instead of building it: no compiler and no development packages, Debian 13 only; available from release 1.1.0), `--force` (try another arm64 board or Debian based system: not tested by me, please report how it went), `--yes` (no confirmation prompt, required when there is no terminal). Through curl the options go after `bash -s --`, for example `... | sudo bash -s -- --yes --decoder ffmpeg`.
+Options: `--language en|ru` (interface language; English by default), `--audio-device NAME` (default `plughw:CARD=HDMI,DEV=0`, see `aplay -L`), `--decoder v4l2|ffmpeg` (default `v4l2`), `--dir PATH` (where to clone when run through curl, default `/opt/sysdvr-lite`), `--stock-sysdvr` (the console has the stock SysDVR: no message window, as in 1.0), `--no-cma`, `--video-mode WxH[@HZ]` (make the kernel use this display mode from boot, `off` removes it; see Troubleshooting), `--binary` (install the prebuilt binary of the latest release instead of building it: no compiler and no development packages, Debian 13 only; available from release 1.1.0), `--force` (try another arm64 board or Debian based system: not tested by me, please report how it went), `--yes` (no confirmation prompt, required when there is no terminal). Through curl the options go after `bash -s --`, for example `... | sudo bash -s -- --yes --decoder ffmpeg`.
 
 ## Optional: the console screen in pauses (patched sysmodule)
 
@@ -199,8 +199,8 @@ To undo the CMA change, restore the backup that the installer made: `sudo cp /bo
 | Sound but no picture, the log says `not the DRM master` | Another program had the display (for example a second client). The client ends and systemd starts it again by itself. If it repeats, check that only one runs: `pgrep -a sysdvr-lite`. |
 | Audio and picture out of sync | Try `--av-offset` (milliseconds, positive = audio later) and `SYSDVR_SYNC=1` to see the measured skew. |
 | The console screen stays off after disconnecting | The sysmodule restores it itself a moment after the connection ends. If it does not, lock and unlock the console (power button), or start the client with `--keep-screen` to never turn it off. SysDVR itself marks this feature as experimental. |
-| Black screen with the console unplugged | That is the terminal; log in on the display or over SSH. The picture returns on its own when the console is plugged in. |
-| The picture froze and the display shows "No picture from the console" | The game is not on the console screen (HOME menu, a controller prompt, a system window) and SysDVR sends nothing. Go back to the game and the picture returns. To see the console screen meanwhile press its power button twice (sleep, then wake), start with `--keep-screen` so it is never turned off, or put the patched sysmodule from [switch-module](switch-module/README.md) on the console so that the screen lights up by itself. |
+| No waiting screen with the console unplugged | Check that the service is running and `--no-banner` is not set. The picture returns automatically when the console is plugged in. |
+| The display shows "Waiting for your game" | The game is not on the console screen (HOME menu, a controller prompt, a system window) and SysDVR sends nothing. Go back to the game and the picture returns. To see the console screen meanwhile press its power button twice (sleep, then wake), start with `--keep-screen` so it is never turned off, or put the patched sysmodule from [switch-module](switch-module/README.md) on the console so that the screen lights up by itself. |
 | Rarely, a 4K TV shows no picture (no boot messages, no terminal) until the stream starts, while the stream itself works | Before the stream the kernel uses the mode the TV prefers, which can be 4K at 60 Hz. Some TVs sometimes fail to bring that link up (seen once on a Sony 4K TV that showed the 4K terminal on every other start, so a TV quirk or the cable, not the client). Make the kernel use 720p, like the stream: reinstall with `sudo /opt/sysdvr-lite/install.sh --video-mode 1280x720` (or add `video=HDMI-A-1:1280x720@60` to the `extraargs=` line of `/boot/armbianEnv.txt` yourself) and reboot; `--video-mode off` undoes it. Switching the TV off and on, or another HDMI cable, can also help. |
 | High CPU | The log should say `GPU conversion enabled`. If it falls back to CPU conversion, install the GPU packages (see Manual build). |
 
@@ -320,6 +320,33 @@ CHANGELOG.md         release notes
 docs/DESIGN.md       architecture and hardware notes
 README.ru.md         this file in Russian
 ```
+
+The waiting screen uses the selected interface language (English by default). Video and audio statuses use plain language and colours; decoder names, audio device and version remain in the footer. It is a static framebuffer, redrawn only when the state changes, with no animation or rendering loop.
+
+## Interface language
+
+The installer asks for English or Russian on the first interactive installation. Use `install.sh --language en` or `install.sh --language ru` to select explicitly; unattended installation defaults to English. The choice is stored as `SYSDVR_LANGUAGE` in `/etc/default/sysdvr-lite` and applies to waiting screens, HOME messages and HDMI warnings. Logs remain in English. Ordinary updates preserve your choice.
+
+Change the language later without downloading or rebuilding:
+
+```bash
+sudo /opt/sysdvr-lite/update.sh --language en
+sudo /opt/sysdvr-lite/update.sh --language ru
+```
+
+Each command only changes the language setting and restarts the service. Run an ordinary update separately.
+
+## HDMI audio warnings
+
+The client checks the connected display’s EDID for stereo LPCM at 48 kHz / 16 bit. If the display does not advertise this format, a warning appears at the top right of the video for eight seconds and stays visible while waiting for the console or game. Unknown or invalid display data and an unavailable ALSA output have separate messages. The warning clears when the condition recovers and is shown again for a new stream or display.
+
+This checks advertised audio support, not the presence of speakers or the TV’s volume setting. `--no-audio`, offline replays, and explicitly selected non-HDMI audio devices disable these warnings. The Switch module is unchanged in 1.3.0; adjust HDMI volume on the display or connected audio device.
+
+## Fixes in 1.3.0
+
+This release fixes occasional audio clicks or brief pauses caused by the USB reader discarding an audio packet received together with video. It also prevents green startup frames by waiting for the first keyframe. Audio buffer size, batching and A/V offset remain unchanged; no new Switch module is required.
+
+A two-minute test on the board processed 3,600 frames with no video queue drops, ALSA write errors or audio synchronization corrections. Average packet-to-display-submission processing was **7.08 ms**, with **8.76% of one CPU core** in use. Packet receipt to HDMI vblank averaged **11.74 ms** in this run (95% at or below 19.40 ms); this includes refresh-phase waiting and is not end-to-end Switch-to-display latency. A separate 87-second audio capture had no missing timestamp segments and byte-identical input/output PCM; listening was clean.
 
 ## 3D-printed case
 
