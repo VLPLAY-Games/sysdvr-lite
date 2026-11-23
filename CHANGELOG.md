@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.1 (2026-11-23)
+
+### Fixes
+- Keep the game-waiting screen while the Switch restarts its USB streaming session after leaving HOME, instead of briefly showing “Dock ready. Connect your Switch”. A physical disconnect or failed reconnect still shows the console-waiting screen.
+
+### Validation
+- Confirmed HOME → game recovery and physical USB disconnect/reconnect on a real Switch. A 60-second hardware run processed 1,800 frames with zero video queue drops, USB/ALSA errors or audio synchronization corrections; average processing was 7.06 ms, CPU use 8.70% of one core.
+- Switch module, audio buffers, batching and A/V offset are unchanged from 1.3.0.
+
 ## 1.3.0 (2026-11-23)
 
 ### Features

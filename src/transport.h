@@ -8,7 +8,8 @@ struct transport {
     /* connect + hello + handshake, 0 on success */
     int  (*open)(transport *t);
     /* Reads next packet into payload (>= PKT_MAX_PAYLOAD bytes). Returns 0 ok,
-     * 1 = stream dropped (caller should reopen), 2 = nothing arrived for a while (try again), -1 fatal/cancelled */
+     * 1 = stream dropped (caller should reopen), 2 = nothing arrived for a while (try again),
+     * 3 = console started a new session (reopen; USB device is still present), -1 fatal/cancelled */
     int  (*next_packet)(transport *t, pkt_header *h, uint8_t *payload);
     void (*close)(transport *t);
     /* Optional: end the session in a way the console notices (a USB bus reset), so that it leaves streaming mode

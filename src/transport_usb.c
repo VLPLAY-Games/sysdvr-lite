@@ -96,7 +96,7 @@ static int usb_next(transport *t, pkt_header *h, uint8_t *payload)
         if (parsed == 1) return 0;
         if (parsed == 2) {
             fprintf(stderr, "usb: the console says hello again, it has dropped this session\n");
-            return 1;
+            return 3;
         }
         if (parsed < 0) {
             fprintf(stderr, "usb: bad packet header\n");
